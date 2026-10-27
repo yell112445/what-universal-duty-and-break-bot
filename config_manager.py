@@ -43,6 +43,30 @@ class ConfigManager:
         else:
             self._config = {}
 
+        # ตรวจสอบและซิงค์กับ config.example.json (อัปเดตคีย์ที่ขาด หรืออัปเกรด ID ช่องที่เคยเป็นค่าของเครื่องเทส)
+        example_path = os.path.join(os.path.dirname(__file__), "data", "config.example.json")
+        if os.path.exists(example_path):
+            try:
+                with open(example_path, "r", encoding="utf-8") as f:
+                    example_data = json.load(f)
+
+                updated = False
+                for k, v in example_data.items():
+                    if k not in self._config:
+                        self._config[k] = v
+                        updated = True
+                    elif str(self._config.get(k, "")).startswith("147062") and not str(v).startswith("147062"):
+                        self._config[k] = v
+                        updated = True
+
+                if updated:
+                    os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
+                    with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
+                        json.dump(self._config, f, indent=2, ensure_ascii=False)
+                    print("[ConfigManager] Automatically synced config.json with updated template values.")
+            except Exception as e:
+                print(f"[ConfigManager] Could not sync with example config: {e}")
+
     async def reload(self) -> bool:
         """โหลดค่าจากไฟล์ config.json ใหม่เข้า Memory (Hot Reload)"""
         async with self._lock:
