@@ -1,0 +1,31 @@
+# Environment secrets
+.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Dynamic Runtime Data (กันไม่ให้ชนกับ git pull บนเซิร์ฟเวอร์)
+data/config.json
+data/database.json
+data/current_duties.json
+data/pending_alerts.json
+data/last_message_id.json
+data/operation_status.json
+data/operations/*
+data/authorized_users/*.txt
+!data/authorized_users/10_2025.txt
+
+# Archives
+*.zip
+*.rar
+*.tar.gz
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
