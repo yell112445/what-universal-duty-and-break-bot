@@ -884,8 +884,8 @@ class OperationsCog(commands.Cog):
 
     @app_commands.command(name="operation_backup", description="สำรองข้อมูลโฟลเดอร์ data เป็นไฟล์ ZIP")
     async def operation_backup(self, interaction: discord.Interaction):
-        if not config.is_admin(interaction.user.id):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+        if not config.is_owner(interaction.user.id):
+            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้ (สงวนสิทธิ์เฉพาะเจ้าของบอทเท่านั้น)", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         try:

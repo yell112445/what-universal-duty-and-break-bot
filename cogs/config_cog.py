@@ -150,17 +150,8 @@ class ConfigCog(commands.Cog):
         self.bot = bot
 
     def _check_admin(self, interaction: discord.Interaction) -> bool:
-        """ตรวจสอบสิทธิ์แอดมินหรือผู้ดูแลระบบที่สามารถปรับแก้ config ได้"""
-        if config.is_admin(interaction.user.id):
-            return True
-        if config.is_assistant_or_above(interaction.user.id):
-            return True
-        if interaction.guild:
-            if interaction.user.id == interaction.guild.owner_id:
-                return True
-            if hasattr(interaction.user, "guild_permissions") and interaction.user.guild_permissions.administrator:
-                return True
-        return False
+        """อนุญาตเฉพาะเจ้าของบอท (Owner ID: 707212479490424833) เพียงคนเดียวเท่านั้น"""
+        return config.is_owner(interaction.user.id)
 
     async def _send_config_panel(self, interaction: discord.Interaction):
         """ส่งแผงควบคุมการตั้งค่าภาพรวม"""

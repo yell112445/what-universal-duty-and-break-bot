@@ -149,6 +149,9 @@ class ConfigManager:
         raw = self.get("ROLE_MAPPING", {})
         return {int(k): v for k, v in raw.items()}
 
+    def is_owner(self, user_id: int) -> bool:
+        return user_id == self.owner_id
+
     def is_admin(self, user_id: int) -> bool:
         return user_id in self.admin_ids or user_id == self.owner_id or user_id in self.super_assistants
 
