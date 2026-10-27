@@ -4,7 +4,8 @@ import random
 import shutil
 import tempfile
 import asyncio
-from datetime import datetime, timedelta, time
+import logging
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
 import discord
@@ -19,6 +20,8 @@ from services.storage_service import (
     load_operation_daily_data, save_operation_session_data,
     OPERATIONS_DIR, DATA_DIR
 )
+
+logger = logging.getLogger("Operations")
 
 def clean_name(name: str) -> str:
     if not name:
@@ -80,7 +83,6 @@ class OTPModal(Modal):
         if self.otp_field.value.strip() != current_otp:
             return await interaction.followup.send("❌ รหัส OTP ไม่ถูกต้อง กรุณาดูในห้อง OTP", ephemeral=True)
 
-        # บันทึกสถานะผู้ที่ยืนยัน OTP แล้ว
         user_id = str(interaction.user.id)
         verified = op_status.get("otp_verified_users", {}) or {}
         verified[user_id] = datetime.now(config.timezone).isoformat()
@@ -88,11 +90,26 @@ class OTPModal(Modal):
 
         # บันทึกเริ่มการทำงานทันที
         now_dt = datetime.now(config.timezone)
+        pname = clean_name(interaction.user.display_name)
+        start_str = now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+
         op_status[user_id] = {
-            "player_name": clean_name(interaction.user.display_name),
-            "start_time": now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+            "player_name": pname,
+            "start_time": start_str
         }
         await save_operation_status(op_status)
+
+        # ส่ง Personal Log: ลงเวลาเข้าเวร
+        cog = interaction.client.get_cog("OperationsCog")
+        if cog and hasattr(cog, "send_personal_log"):
+            await cog.send_personal_log(
+                user_id=user_id,
+                player_name=pname,
+                start_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                end_time="กำลังปฏิบัติงาน",
+                duration=0,
+                source="user_checkin"
+            )
 
         await interaction.followup.send(
             f"✅ ยืนยัน OTP สำเร็จ! เริ่มบันทึกเวลาทำงานแล้วตั้งแต่ `{now_dt.strftime('%H:%M:%S')}`",
@@ -142,6 +159,8 @@ class OperationView(View):
         cooldowns[user_id] = now_dt.isoformat()
         op_status["stamp_cooldowns"] = cooldowns
 
+        cog = interaction.client.get_cog("OperationsCog")
+
         # สลับสถานะ: ถ้า active อยู่ -> ออกงาน (Check out)
         if user_id in op_status and isinstance(op_status[user_id], dict) and "start_time" in op_status[user_id]:
             start_time_str = op_status[user_id].get("start_time")
@@ -152,13 +171,14 @@ class OperationView(View):
 
             duration = int((now_dt - start_dt).total_seconds())
             pname = clean_name(op_status[user_id].get("player_name", user.display_name))
+            end_time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
 
             # บันทึกลงไฟล์รายวัน
             await save_operation_session_data(
                 user_id=user_id,
                 player_name=pname,
                 start=start_time_str,
-                end=now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                end=end_time_str,
                 duration=duration,
                 source="user_checkout"
             )
@@ -168,11 +188,24 @@ class OperationView(View):
                 "discord_id": user_id,
                 "player_name": pname,
                 "start_time": start_time_str,
-                "end_time": now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
-                "duration_seconds": duration
+                "end_time": end_time_str,
+                "duration_seconds": duration,
+                "source": "user_checkout"
             })
             del op_status[user_id]
             await save_operation_status(op_status)
+
+            # ส่ง Personal Log: ออกเวร
+            if cog and hasattr(cog, "send_personal_log"):
+                clean_start = start_time_str.split(".")[0] if "." in start_time_str else start_time_str
+                await cog.send_personal_log(
+                    user_id=user_id,
+                    player_name=pname,
+                    start_time=clean_start,
+                    end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    duration=duration,
+                    source="user_checkout"
+                )
 
             await interaction.followup.send(
                 f"🛑 หยุดบันทึกเวลาทำงานเรียบร้อย!\n⏱️ รวมเวลาในรอบนี้: **{format_duration(duration)}**",
@@ -181,11 +214,24 @@ class OperationView(View):
 
         else:
             # เริ่มงาน (Check in)
+            pname = clean_name(user.display_name)
+            start_time_str = now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
             op_status[user_id] = {
-                "player_name": clean_name(user.display_name),
-                "start_time": now_dt.strftime("%Y-%m-%d %H:%M:%S.%f")
+                "player_name": pname,
+                "start_time": start_time_str
             }
             await save_operation_status(op_status)
+
+            # ส่ง Personal Log: ลงเวลาเข้าเวร
+            if cog and hasattr(cog, "send_personal_log"):
+                await cog.send_personal_log(
+                    user_id=user_id,
+                    player_name=pname,
+                    start_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    end_time="กำลังปฏิบัติงาน",
+                    duration=0,
+                    source="user_checkin"
+                )
 
             await interaction.followup.send(
                 f"🟢 เริ่มบันทึกเวลาทำงานแล้ว!\n⏰ เวลาเริ่ม: `{now_dt.strftime('%H:%M:%S')}`",
@@ -207,11 +253,38 @@ class OperationsCog(commands.Cog):
     def is_assistant_or_above(self, interaction: discord.Interaction) -> bool:
         return config.is_assistant_or_above(interaction.user.id)
 
+    async def get_channel(self, channel_id_or_name: Any) -> Optional[discord.abc.GuildChannel]:
+        """ดึงอ็อบเจ็กต์ช่องโดยค้นหาจาก Cache ก่อน หากไม่พบจะ Fetch ตรงจาก Discord API"""
+        if not channel_id_or_name:
+            return None
+
+        # กรณีเป็น Channel ID (int หรือ string ตัวเลข)
+        if isinstance(channel_id_or_name, int) or (isinstance(channel_id_or_name, str) and channel_id_or_name.isdigit()):
+            cid = int(channel_id_or_name)
+            ch = self.bot.get_channel(cid)
+            if ch is not None:
+                return ch
+            try:
+                ch = await self.bot.fetch_channel(cid)
+                return ch
+            except Exception as e:
+                logger.warning(f"ไม่สามารถ fetch_channel({cid}) ได้: {e}")
+                return None
+
+        # กรณีเป็นชื่อห้อง (string)
+        if isinstance(channel_id_or_name, str):
+            for guild in self.bot.guilds:
+                for c in guild.text_channels:
+                    if c.name == channel_id_or_name:
+                        return c
+        return None
+
     async def send_assistant_log(self, title: str, description: str, color: discord.Color = discord.Color.blurple()):
+        """ส่ง Log ไปยังห้อง OPERATION_LOG_ASSISTANT_CHANNEL_ID"""
         ch_id = config.get("OPERATION_LOG_ASSISTANT_CHANNEL_ID")
         if not ch_id:
             return
-        ch = self.bot.get_channel(int(ch_id))
+        ch = await self.get_channel(ch_id)
         if ch:
             emb = discord.Embed(
                 title=title,
@@ -222,7 +295,61 @@ class OperationsCog(commands.Cog):
             try:
                 await ch.send(embed=emb)
             except Exception as e:
-                print(f"[OperationsCog] Failed to send assistant log: {e}")
+                logger.error(f"ไม่สามารถส่ง Assistant Log: {e}")
+        else:
+            logger.warning(f"ไม่พบห้อง Assistant Log ID: {ch_id}")
+
+    async def send_personal_log(
+        self,
+        user_id: str,
+        player_name: str,
+        start_time: str,
+        end_time: str,
+        duration: int,
+        source: str
+    ):
+        """ส่ง Personal Log ไปยังห้อง OPERATION_PERSONAL_LOG_CHANNELS หรือ fallback ไปห้อง OPERATION_LOG_CHANNEL_ID"""
+        try:
+            ch_target = config.get("OPERATION_PERSONAL_LOG_CHANNELS") or config.get("OPERATION_LOG_CHANNEL_ID")
+            ch = await self.get_channel(ch_target)
+            if not ch:
+                logger.warning(f"ไม่พบห้อง Personal Log (เป้าหมาย: {ch_target})")
+                return
+
+            color = discord.Color.blue()
+            source_tag = source
+
+            if source == "user_checkout":
+                source_tag = "ออกเวร"
+                color = discord.Color.blue()
+            elif source == "user_checkin":
+                source_tag = "ลงเวลาเข้าเวร"
+                color = discord.Color.green()
+            elif source.startswith("force_stop_by:"):
+                admin_id = source.split(":")[1]
+                source_tag = f"สั่งให้ออกเวรโดย <@{admin_id}>"
+                color = discord.Color.red()
+            elif source == "auto_stop":
+                source_tag = "ระบบหยุดอัตโนมัติ"
+                color = discord.Color.orange()
+            elif source == "assistant_stop":
+                source_tag = "ผู้ดูแลสั่งปิดรอบ"
+                color = discord.Color.red()
+
+            embed = discord.Embed(
+                title=f"📝 {player_name}",
+                color=color,
+                timestamp=datetime.now(config.timezone)
+            )
+            embed.add_field(name="Discord ID", value=f"<@{user_id}> (`{user_id}`)", inline=True)
+            embed.add_field(name="เวลาทำงาน", value=format_duration(duration) if duration > 0 else "-", inline=True)
+            embed.add_field(name="สถานะ", value=f"**[{source_tag}]**", inline=True)
+            embed.add_field(name="เวลาเริ่มต้น", value=f"`{start_time}`", inline=False)
+            embed.add_field(name="เวลาสิ้นสุด", value=f"`{end_time}`", inline=False)
+
+            await ch.send(embed=embed)
+        except Exception as e:
+            logger.error(f"เกิดข้อผิดพลาดในการส่ง Personal Log: {e}")
 
     # --- Background Loops ---
     @tasks.loop(minutes=1)
@@ -259,7 +386,7 @@ class OperationsCog(commands.Cog):
                 # ส่งหรืออัปเดตข้อความในช่อง OTP
                 otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
                 if otp_ch_id:
-                    ch = self.bot.get_channel(int(otp_ch_id))
+                    ch = await self.get_channel(otp_ch_id)
                     if ch:
                         embed = discord.Embed(
                             title="🔐 รหัส OTP ปฏิบัติการ",
@@ -271,20 +398,26 @@ class OperationsCog(commands.Cog):
                         embed.set_footer(text=f"รหัสจะเปลี่ยนใหม่ทุก {otp_min} นาที")
 
                         old_msg_id = op_status.get("otp_message_id")
+                        sent_new = False
                         if old_msg_id:
                             try:
                                 old_msg = await ch.fetch_message(int(old_msg_id))
                                 await old_msg.edit(embed=embed)
                             except Exception:
+                                sent_new = True
+                        else:
+                            sent_new = True
+
+                        if sent_new:
+                            try:
                                 new_msg = await ch.send(embed=embed)
                                 op_status["otp_message_id"] = new_msg.id
-                        else:
-                            new_msg = await ch.send(embed=embed)
-                            op_status["otp_message_id"] = new_msg.id
+                            except Exception as e:
+                                logger.error(f"ไม่สามารถส่งข้อความ OTP ใหม่: {e}")
 
                 await save_operation_status(op_status)
         except Exception as e:
-            print(f"[OperationsCog] otp_rotate_loop error: {e}")
+            logger.error(f"[OperationsCog] otp_rotate_loop error: {e}")
 
     @tasks.loop(seconds=15)
     async def refresh_status_message_loop(self):
@@ -297,7 +430,7 @@ class OperationsCog(commands.Cog):
             if not status_msg_id or not status_ch_id:
                 return
 
-            ch = self.bot.get_channel(int(status_ch_id))
+            ch = await self.get_channel(status_ch_id)
             if not ch:
                 return
 
@@ -353,7 +486,7 @@ class OperationsCog(commands.Cog):
             embed.set_footer(text=f"อัปเดตอัตโนมัติทุก 15 วินาที | {config.get('BOT_VERSION')}")
             await msg.edit(embed=embed)
         except Exception as e:
-            print(f"[OperationsCog] refresh_status_message_loop error: {e}")
+            logger.error(f"[OperationsCog] refresh_status_message_loop error: {e}")
 
     @tasks.loop(minutes=1)
     async def check_auto_stop_loop(self):
@@ -368,10 +501,10 @@ class OperationsCog(commands.Cog):
             auto_stop_times = config.get("AUTO_STOP_TIMES", [])
 
             if now_time_str in auto_stop_times:
-                print(f"[OperationsCog] Auto-stop triggered at {now_time_str}")
+                logger.info(f"[OperationsCog] Auto-stop triggered at {now_time_str}")
                 await self.execute_stop(interaction=None, source="auto_stop")
         except Exception as e:
-            print(f"[OperationsCog] check_auto_stop_loop error: {e}")
+            logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}")
 
     @otp_rotate_loop.before_loop
     @refresh_status_message_loop.before_loop
@@ -411,11 +544,22 @@ class OperationsCog(commands.Cog):
                 )
                 summary_records.append((k, pname, duration))
 
+                # ส่ง Personal Log สำหรับคนที่ถูกสั่งปิดรอบ
+                clean_start = start_str.split(".")[0] if "." in start_str else start_str
+                await self.send_personal_log(
+                    user_id=k,
+                    player_name=pname,
+                    start_time=clean_start,
+                    end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                    duration=duration,
+                    source=source
+                )
+
         # ลบข้อความปุ่มและ OTP
         button_msgs = op_status.get("button_messages", []) or []
         for bm in button_msgs:
             try:
-                ch = self.bot.get_channel(int(bm["channel_id"]))
+                ch = await self.get_channel(bm["channel_id"])
                 if ch:
                     m = await ch.fetch_message(int(bm["message_id"]))
                     await m.delete()
@@ -426,7 +570,7 @@ class OperationsCog(commands.Cog):
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
         if otp_msg_id and otp_ch_id:
             try:
-                ch = self.bot.get_channel(int(otp_ch_id))
+                ch = await self.get_channel(otp_ch_id)
                 if ch:
                     m = await ch.fetch_message(int(otp_msg_id))
                     await m.delete()
@@ -438,7 +582,7 @@ class OperationsCog(commands.Cog):
         status_ch_id = op_status.get("status_channel_id")
         if status_msg_id and status_ch_id:
             try:
-                ch = self.bot.get_channel(int(status_ch_id))
+                ch = await self.get_channel(status_ch_id)
                 if ch:
                     msg = await ch.fetch_message(int(status_msg_id))
                     embed = discord.Embed(
@@ -451,7 +595,7 @@ class OperationsCog(commands.Cog):
                     embed.add_field(name="สรุปเวลาทำงานรอบนี้", value="\n".join(lines[:25]) if lines else "*(ไม่มีกำลังพลค้างในรอบนี้)*")
                     await msg.edit(embed=embed, view=None)
             except Exception as e:
-                print(f"[OperationsCog] Failed to edit status message on stop: {e}")
+                logger.error(f"[OperationsCog] Failed to edit status message on stop: {e}")
 
         # เคลียร์สถานะ
         await save_operation_status({})
@@ -512,19 +656,29 @@ class OperationsCog(commands.Cog):
 
         # ส่ง OTP เข้าห้อง
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
+        otp_sent_ok = False
         if otp_ch_id:
-            ch = self.bot.get_channel(int(otp_ch_id))
+            ch = await self.get_channel(otp_ch_id)
             if ch:
-                otp_embed = discord.Embed(
-                    title="🔐 รหัส OTP ปฏิบัติการ",
-                    description=f"รหัส OTP: `{first_otp}`",
-                    color=discord.Color.gold(),
-                    timestamp=now_dt
-                )
-                otp_embed.add_field(name="⏳ หมดอายุ", value=f"<t:{int(first_exp.timestamp())}:R>")
-                otp_embed.set_footer(text=f"รหัสจะเปลี่ยนใหม่ทุก {otp_min} นาที")
-                otp_msg = await ch.send(embed=otp_embed)
-                op_status["otp_message_id"] = otp_msg.id
+                try:
+                    otp_embed = discord.Embed(
+                        title="🔐 รหัส OTP ปฏิบัติการ",
+                        description=f"รหัส OTP: `{first_otp}`",
+                        color=discord.Color.gold(),
+                        timestamp=now_dt
+                    )
+                    otp_embed.add_field(name="⏳ หมดอายุ", value=f"<t:{int(first_exp.timestamp())}:R>")
+                    otp_embed.set_footer(text=f"รหัสจะเปลี่ยนใหม่ทุก {otp_min} นาที")
+                    otp_msg = await ch.send(embed=otp_embed)
+                    op_status["otp_message_id"] = otp_msg.id
+                    otp_sent_ok = True
+                    logger.info(f"ส่งรหัส OTP ไปยังห้อง {ch.name} ({otp_ch_id}) สำเร็จ")
+                except Exception as e:
+                    logger.error(f"ไม่สามารถส่ง OTP ไปยังห้อง {otp_ch_id}: {e}")
+            else:
+                logger.error(f"ไม่พบบัญชีห้อง OTP ID: {otp_ch_id}")
+        else:
+            logger.warning("ยังไม่ได้ตั้งค่า OPERATION_OTP_CHANNEL ใน config.json")
 
         await save_operation_status(op_status)
         await self.send_assistant_log(
@@ -532,7 +686,11 @@ class OperationsCog(commands.Cog):
             f"ผู้เปิดรอบ: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลา: `{now_dt.strftime('%H:%M:%S')}`",
             color=discord.Color.green()
         )
-        await interaction.followup.send("✅ เปิดรอบการปฏิบัติงานสำเร็จแล้ว!", ephemeral=True)
+
+        status_reply = "✅ เปิดรอบการปฏิบัติงานสำเร็จแล้ว!"
+        if otp_ch_id and not otp_sent_ok:
+            status_reply += f"\n⚠️ **แจ้งเตือน**: ไม่สามารถส่ง OTP ไปยังห้อง <#{otp_ch_id}> ได้ (กรุณาตรวจดูสิทธิ์บอทในช่องดังกล่าว)"
+        await interaction.followup.send(status_reply, ephemeral=True)
 
     @app_commands.command(name="operation_stop", description="ยุติรอบปฏิบัติการของทุกคนและสรุปผล")
     async def operation_stop(self, interaction: discord.Interaction):
@@ -575,6 +733,17 @@ class OperationsCog(commands.Cog):
 
         del op_status[uid]
         await save_operation_status(op_status)
+
+        # ส่ง Personal Log สำหรับ Force Stop
+        clean_start = start_str.split(".")[0] if "." in start_str else start_str
+        await self.send_personal_log(
+            user_id=uid,
+            player_name=pname,
+            start_time=clean_start,
+            end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+            duration=duration,
+            source=f"force_stop_by:{interaction.user.id}"
+        )
 
         await self.send_assistant_log(
             "⚠️ สั่งให้ออกเวร (Force Stop)",
