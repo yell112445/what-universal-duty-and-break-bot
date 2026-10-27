@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import random
 import shutil
 import tempfile
@@ -499,10 +500,39 @@ class OperationsCog(commands.Cog):
             now_local = datetime.now(config.timezone)
             now_time_str = now_local.strftime("%H:%M")
             auto_stop_times = config.get("AUTO_STOP_TIMES", [])
+            temp_stop = op_status.get("temp_auto_stop")
 
-            if now_time_str in auto_stop_times:
-                logger.info(f"[OperationsCog] Auto-stop triggered at {now_time_str}")
+            # ตรวจสอบเวลาหยุด (รอบปกติจาก config หรือรอบที่ตั้งชั่วคราว)
+            if now_time_str in auto_stop_times or (temp_stop and now_time_str == temp_stop):
+                logger.info(f"[OperationsCog] Auto-stop triggered at {now_time_str} (temp_stop={temp_stop})")
                 await self.execute_stop(interaction=None, source="auto_stop")
+                return
+
+            # แจ้งเตือนล่วงหน้าก่อนปิดรอบ
+            announce_min = int(config.get("AUTO_STOP_ANNOUNCE_MINUTES", 10))
+            future_time_str = (now_local + timedelta(minutes=announce_min)).strftime("%H:%M")
+            if future_time_str in auto_stop_times or (temp_stop and future_time_str == temp_stop):
+                last_announced = op_status.get("last_auto_stop_announced")
+                if last_announced != future_time_str:
+                    op_status["last_auto_stop_announced"] = future_time_str
+                    await save_operation_status(op_status)
+
+                    status_ch_id = op_status.get("status_channel_id")
+                    if status_ch_id:
+                        ch = await self.get_channel(status_ch_id)
+                        if ch:
+                            embed = discord.Embed(
+                                title="⚠️ แจ้งเตือน: เวลาปฏิบัติการใกล้สิ้นสุดลง",
+                                description=(
+                                    f"ระบบจะปิดรอบบันทึกเวลาอัตโนมัติในอีก **{announce_min} นาที**\n"
+                                    f"⏰ เวลาที่จะปิดรอบ: `{future_time_str}` น.\n\n"
+                                    f"กรุณาเตรียมตัวและตรวจเช็กภารกิจให้เรียบร้อยครับ"
+                                ),
+                                color=discord.Color.yellow(),
+                                timestamp=now_local
+                            )
+                            embed.set_footer(text=f"{config.get('BOT_VERSION')} | Auto Stop Alert")
+                            await ch.send(embed=embed)
         except Exception as e:
             logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}")
 
@@ -612,9 +642,15 @@ class OperationsCog(commands.Cog):
 
     # --- Slash Commands ---
     @app_commands.command(name="operation_start", description="เริ่มรอบปฏิบัติการใหม่ และสร้างปุ่มลงเวลา")
-    async def operation_start(self, interaction: discord.Interaction):
+    @app_commands.describe(stop_time="เวลาปิดรอบอัตโนมัติเฉพาะรอบนี้ (HH:MM เช่น 18:00 หรือ 03:00) ถ้าไม่ใส่จะยึดตาม config")
+    async def operation_start(self, interaction: discord.Interaction, stop_time: Optional[str] = None):
         if not self.is_assistant_or_above(interaction):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+
+        if stop_time:
+            stop_time = stop_time.strip()
+            if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", stop_time):
+                return await interaction.response.send_message("❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         op_status = await load_operation_status()
@@ -628,6 +664,9 @@ class OperationsCog(commands.Cog):
             color=discord.Color.green(),
             timestamp=now_dt
         )
+        if stop_time:
+            embed.add_field(name="⏰ กำหนดเวลาปิดรอบ", value=f"`{stop_time}` น.", inline=True)
+
         status_msg = await interaction.channel.send(embed=embed)
 
         # ส่งปุ่ม
@@ -653,6 +692,8 @@ class OperationsCog(commands.Cog):
             "otp_generated_at": now_dt.isoformat(),
             "otp_expires_at": first_exp.isoformat()
         }
+        if stop_time:
+            op_status["temp_auto_stop"] = stop_time
 
         # ส่ง OTP เข้าห้อง
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
@@ -681,16 +722,48 @@ class OperationsCog(commands.Cog):
             logger.warning("ยังไม่ได้ตั้งค่า OPERATION_OTP_CHANNEL ใน config.json")
 
         await save_operation_status(op_status)
+
+        desc_log = f"ผู้เปิดรอบ: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลาเริ่ม: `{now_dt.strftime('%H:%M:%S')}`"
+        if stop_time:
+            desc_log += f"\nเวลาปิดรอบที่ตั้งไว้: `{stop_time}` น."
+
         await self.send_assistant_log(
             "🟢 เริ่มรอบปฏิบัติการใหม่",
-            f"ผู้เปิดรอบ: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลา: `{now_dt.strftime('%H:%M:%S')}`",
+            desc_log,
             color=discord.Color.green()
         )
 
         status_reply = "✅ เปิดรอบการปฏิบัติงานสำเร็จแล้ว!"
+        if stop_time:
+            status_reply += f"\n⏰ ตั้งเวลาปิดรอบอัตโนมัติไว้ที่: `{stop_time}` น."
         if otp_ch_id and not otp_sent_ok:
             status_reply += f"\n⚠️ **แจ้งเตือน**: ไม่สามารถส่ง OTP ไปยังห้อง <#{otp_ch_id}> ได้ (กรุณาตรวจดูสิทธิ์บอทในช่องดังกล่าว)"
         await interaction.followup.send(status_reply, ephemeral=True)
+
+    @app_commands.command(name="operation_set_stop", description="ตั้งหรือเปลี่ยนเวลาปิดรอบอัตโนมัติ (เฉพาะรอบปัจจุบัน)")
+    @app_commands.describe(time="เวลาที่ต้องการปิดรอบ (HH:MM เช่น 18:00 หรือ 03:00)")
+    async def operation_set_stop(self, interaction: discord.Interaction, time: str):
+        if not self.is_assistant_or_above(interaction):
+            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+
+        time = time.strip()
+        if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", time):
+            return await interaction.response.send_message("❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        op_status = await load_operation_status()
+        if not op_status.get("status_message_id"):
+            return await interaction.followup.send("⚠️ ขณะนี้ไม่มีรอบการปฏิบัติงานที่เปิดอยู่", ephemeral=True)
+
+        op_status["temp_auto_stop"] = time
+        await save_operation_status(op_status)
+
+        await self.send_assistant_log(
+            "⏰ ตั้งเวลาปิดรอบอัตโนมัติ",
+            f"ผู้ตั้ง: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลาปิด: `{time}` น.",
+            color=discord.Color.blue()
+        )
+        await interaction.followup.send(f"✅ กำหนดเวลาปิดรอบอัตโนมัติเป็นเวลา `{time}` น. เรียบร้อยแล้ว!", ephemeral=True)
 
     @app_commands.command(name="operation_stop", description="ยุติรอบปฏิบัติการของทุกคนและสรุปผล")
     async def operation_stop(self, interaction: discord.Interaction):

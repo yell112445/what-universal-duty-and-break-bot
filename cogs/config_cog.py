@@ -213,26 +213,69 @@ class ConfigCog(commands.Cog):
         else:
             await interaction.response.send_message("❌ โหลดการตั้งค่าล้มเหลว กรุณาตรวจไฟล์ json", ephemeral=True)
 
-    @app_commands.command(name="config_set", description="ตั้งค่าตัวแปรใน config โดยตรง")
-    @app_commands.describe(key="ชื่อตัวแปรใน config.json", value="ค่าใหม่ที่ต้องการตั้ง")
-    async def config_set_direct(self, interaction: discord.Interaction, key: str, value: str):
+    @app_commands.command(name="set_config", description="ตั้งค่าตัวแปรใน config (หรือเว้นว่างเพื่อเปิดดูแผงตั้งค่า)")
+    @app_commands.describe(
+        key="ชื่อตัวแปรใน config (เช่น OPERATION_OTP_CHANNEL, AUTO_STOP_TIMES)",
+        value="ค่าใหม่ (ถ้าเว้นว่างจะเปิดหน้าต่าง Modal ให้กรอก)"
+    )
+    async def set_config_command(self, interaction: discord.Interaction, key: Optional[str] = None, value: Optional[str] = None):
         if not self._check_admin(interaction):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
 
+        # 1. ถ้าไม่ใส่ key -> แสดงแผงตั้งค่าภาพรวม
+        if not key:
+            return await self.config_panel(interaction)
+
+        key = key.strip()
+
+        # 2. ถ้าใส่ key แต่เว้นว่าง value -> เปิด Modal ให้กรอก
+        if value is None:
+            current = config.get(key)
+            val_type = "str"
+            if isinstance(current, bool):
+                val_type = "bool"
+            elif isinstance(current, int):
+                val_type = "int"
+            elif isinstance(current, list):
+                val_type = "list_str"
+            modal = ConfigEditModal(key, str(current if current is not None else ""), key, val_type)
+            return await interaction.response.send_modal(modal)
+
+        # 3. ถ้าใส่ทั้ง key และ value -> บันทึกค่าทันที
+        await interaction.response.defer(ephemeral=True)
+        raw_val = value.strip()
+        parsed_val = raw_val
+
         current = config.get(key)
-        if current is None:
-            return await interaction.response.send_message(f"⚠️ ไม่พบตัวแปร `{key}` ใน config", ephemeral=True)
-
-        val_type = "str"
         if isinstance(current, bool):
-            val_type = "bool"
-        elif isinstance(current, int):
-            val_type = "int"
+            parsed_val = raw_val.lower() in ["true", "1", "yes", "เปิด", "on"]
+        elif isinstance(current, int) or (isinstance(raw_val, str) and raw_val.isdigit()):
+            try:
+                parsed_val = int(raw_val)
+            except ValueError:
+                pass
         elif isinstance(current, list):
-            val_type = "list_str"
+            if raw_val.startswith("[") and raw_val.endswith("]"):
+                try:
+                    parsed_val = json.loads(raw_val)
+                except Exception:
+                    parsed_val = [x.strip() for x in raw_val.replace(",", " ").split() if x.strip()]
+            else:
+                parsed_val = [x.strip() for x in raw_val.replace(",", " ").split() if x.strip()]
 
-        modal = ConfigEditModal(key, str(current), key, val_type)
-        await interaction.response.send_modal(modal)
+        success = await config.set(key, parsed_val)
+        if success:
+            await interaction.followup.send(
+                f"✅ อัปเดต `{key}` เป็น `{parsed_val}` สำเร็จเรียบร้อย!\n(มีผลทันทีโดยไม่ต้องรีสตาร์ตบอท)",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send("❌ บันทึกค่าล้มเหลว กรุณาตรวจสอบ log", ephemeral=True)
+
+    @app_commands.command(name="config_set", description="ตั้งค่าตัวแปรใน config (คำสั่งเหมือน set_config)")
+    @app_commands.describe(key="ชื่อตัวแปรใน config.json", value="ค่าใหม่ที่ต้องการตั้ง")
+    async def config_set_direct(self, interaction: discord.Interaction, key: Optional[str] = None, value: Optional[str] = None):
+        await self.set_config_command(interaction, key, value)
 
     @app_commands.command(name="reload", description="[Admin] โหลดโมดูล Cog ใหม่ทันที (ไม่ต้องรีสตาร์ตบอท)")
     @app_commands.describe(cog_name="โมดูลที่ต้องการรีโหลด (ค่าเริ่มต้น: รีโหลดทั้งหมด)")
