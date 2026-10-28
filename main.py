@@ -65,12 +65,13 @@ class WhatUniversalBot(commands.Bot):
             except Exception as e:
                 logger.error(f"❌ โหลด Cog {cog} ล้มเหลว: {e}", exc_info=True)
 
-        # Sync Slash Commands ไปยัง Guild ทันที (ไม่ต้องรอ Global Sync 1 ชั่วโมง)
+        # Sync Slash Commands ทั้งแบบ Guild (อัปเดตทันที) และแบบ Global
         try:
             guild_obj = discord.Object(id=config.guild_id)
             self.tree.copy_global_to(guild=guild_obj)
-            await self.tree.sync(guild=guild_obj)
-            logger.info(f"⚡ Sync Slash Commands ไปยัง Guild ID: {config.guild_id} สำเร็จ")
+            synced_guild = await self.tree.sync(guild=guild_obj)
+            synced_global = await self.tree.sync()
+            logger.info(f"⚡ Sync Slash Commands สำเร็จ: Guild {config.guild_id} ({len(synced_guild)} คำสั่ง), Global ({len(synced_global)} คำสั่ง)")
         except Exception as e:
             logger.error(f"⚠️ เกิดข้อผิดพลาดขณะ Sync Slash Commands: {e}")
 

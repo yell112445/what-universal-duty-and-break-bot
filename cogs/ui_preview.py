@@ -798,22 +798,6 @@ class UIPreviewCog(commands.Cog):
         await self._execute_preview(interaction, component)
 
     @app_commands.command(
-        name="preview_ui",
-        description="[Admin] คำสั่งทางลัดสำหรับดูหน้าตา UI (ทำงานเหมือนคำสั่ง /preview)"
-    )
-    @app_commands.describe(component="ส่วนที่ต้องการดูตัวอย่าง")
-    @app_commands.choices(component=[
-        app_commands.Choice(name="ทั้งหมดทุกส่วน (All System Components)", value="all"),
-        app_commands.Choice(name="1. ระบบบันทึกเวลา (Time Tracker & Operations)", value="operations"),
-        app_commands.Choice(name="2. ระบบต้อนรับ & Ticket (Welcome & Ticket Suite)", value="welcome"),
-        app_commands.Choice(name="3. ระบบลางาน (Leave Board Suite)", value="leave"),
-        app_commands.Choice(name="4. แผงควบคุมการตั้งค่า (Config Dashboard)", value="config"),
-        app_commands.Choice(name="5. ทดสอบระบบแบ่งหน้า (Split Engine Demo)", value="split_demo")
-    ])
-    async def preview_ui_command(self, interaction: discord.Interaction, component: str = "all"):
-        await self._execute_preview(interaction, component)
-
-    @app_commands.command(
         name="preview_clean",
         description="[Admin] ลบข้อความตัวอย่างที่ส่งทดสอบในห้อง Preview ออกทั้งหมด"
     )

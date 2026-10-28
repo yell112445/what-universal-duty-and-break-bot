@@ -352,17 +352,6 @@ class ConfigCog(commands.Cog):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
         await self._send_config_panel(interaction)
 
-    @app_commands.command(name="config_reload", description="โหลดค่าจาก data/config.json ใหม่เข้า Memory")
-    async def config_reload(self, interaction: discord.Interaction):
-        if not self._check_admin(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
-
-        success = await config.reload()
-        if success:
-            await interaction.response.send_message("✅ โหลดการตั้งค่าจาก `data/config.json` ใหม่สำเร็จ!", ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ โหลดการตั้งค่าล้มเหลว กรุณาตรวจไฟล์ json", ephemeral=True)
-
     @app_commands.command(name="set_config", description="ตั้งค่าตัวแปรใน config (หรือเว้นว่างเพื่อเปิดดูแผงตั้งค่า)")
     @app_commands.describe(
         key="ชื่อตัวแปรใน config (เช่น OPERATION_OTP_CHANNEL, AUTO_STOP_TIMES)",
@@ -371,20 +360,12 @@ class ConfigCog(commands.Cog):
     async def set_config_command(self, interaction: discord.Interaction, key: Optional[str] = None, value: Optional[str] = None):
         await self._handle_set_config(interaction, key, value)
 
-    @app_commands.command(name="config_set", description="ตั้งค่าตัวแปรใน config (คำสั่งเหมือน set_config)")
-    @app_commands.describe(key="ชื่อตัวแปรใน config.json", value="ค่าใหม่ที่ต้องการตั้ง")
-    async def config_set_direct(self, interaction: discord.Interaction, key: Optional[str] = None, value: Optional[str] = None):
-        await self._handle_set_config(interaction, key, value)
-
     @set_config_command.autocomplete("key")
-    @config_set_direct.autocomplete("key")
     async def set_config_key_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         return await self._key_autocomplete(interaction, current)
 
     async def _safe_reload_or_load(self, cog_name: str) -> str:
         """รีโหลดโมดูลอย่างปลอดภัย หรือโหลดเพิ่มทันทีหากเป็นโมดูลใหม่ที่เพิ่งถูกดึงเข้ามา"""
-        if cog_name == "cogs.breaktime" and cog_name not in self.bot.extensions:
-            return f"⏸️ `{cog_name}`: ปิดใช้งานชั่วคราว (รอคำสั่งเปิดใช้งาน)"
 
         if cog_name in self.bot.extensions:
             try:
@@ -427,26 +408,50 @@ class ConfigCog(commands.Cog):
 
         # Auto-sync commands
         try:
-            guild_obj = discord.Object(id=config.guild_id)
-            self.bot.tree.copy_global_to(guild=guild_obj)
-            await self.bot.tree.sync(guild=guild_obj)
-            results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์สำเร็จ")
+            guilds_to_sync = set()
+            if interaction.guild:
+                guilds_to_sync.add(interaction.guild.id)
+            if config.guild_id:
+                guilds_to_sync.add(config.guild_id)
+
+            for gid in guilds_to_sync:
+                g_obj = discord.Object(id=gid)
+                self.bot.tree.copy_global_to(guild=g_obj)
+                await self.bot.tree.sync(guild=g_obj)
+
+            await self.bot.tree.sync()
+            results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์และ Global สำเร็จ")
         except Exception as se:
             results.append(f"⚠️ `Slash Commands`: {se}")
 
         await interaction.followup.send("\n".join(results), ephemeral=True)
 
-    @app_commands.command(name="sync", description="[Admin] ซิงค์ Slash Commands ทั้งหมดเข้า Discord ทันที")
+    @app_commands.command(name="sync", description="[Admin] ซิงค์ Slash Commands ทั้งหมดเข้า Discord ทันที (ทั้ง Guild และ Global)")
     async def sync_commands(self, interaction: discord.Interaction):
         if not self._check_admin(interaction):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         try:
-            guild_obj = discord.Object(id=config.guild_id)
-            self.bot.tree.copy_global_to(guild=guild_obj)
-            synced = await self.bot.tree.sync(guild=guild_obj)
-            await interaction.followup.send(f"✅ ซิงค์ Slash Commands สำเร็จทั้งหมด `{len(synced)}` คำสั่ง", ephemeral=True)
+            guilds_to_sync = set()
+            if interaction.guild:
+                guilds_to_sync.add(interaction.guild.id)
+            if config.guild_id:
+                guilds_to_sync.add(config.guild_id)
+
+            synced_details = []
+            for gid in guilds_to_sync:
+                g_obj = discord.Object(id=gid)
+                self.bot.tree.copy_global_to(guild=g_obj)
+                synced = await self.bot.tree.sync(guild=g_obj)
+                synced_details.append(f"• Guild `{gid}`: `{len(synced)}` คำสั่ง")
+
+            global_synced = await self.bot.tree.sync()
+            synced_details.append(f"• Global: `{len(global_synced)}` คำสั่ง")
+
+            details_str = "\n".join(synced_details)
+            msg = f"✅ ซิงค์ Slash Commands สำเร็จเรียบร้อยแล้ว!\n{details_str}"
+            await interaction.followup.send(msg, ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ ซิงค์คำสั่งล้มเหลว: {e}", ephemeral=True)
 
@@ -472,10 +477,19 @@ class ConfigCog(commands.Cog):
 
             # Auto-sync commands after pull
             try:
-                guild_obj = discord.Object(id=config.guild_id)
-                self.bot.tree.copy_global_to(guild=guild_obj)
-                await self.bot.tree.sync(guild=guild_obj)
-                reload_results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์สำเร็จ")
+                guilds_to_sync = set()
+                if interaction.guild:
+                    guilds_to_sync.add(interaction.guild.id)
+                if config.guild_id:
+                    guilds_to_sync.add(config.guild_id)
+
+                for gid in guilds_to_sync:
+                    g_obj = discord.Object(id=gid)
+                    self.bot.tree.copy_global_to(guild=g_obj)
+                    await self.bot.tree.sync(guild=g_obj)
+
+                await self.bot.tree.sync()
+                reload_results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์และ Global สำเร็จ")
             except Exception as se:
                 reload_results.append(f"⚠️ `Slash Commands`: {se}")
 

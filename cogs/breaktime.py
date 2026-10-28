@@ -489,44 +489,7 @@ class BreaktimeCog(commands.Cog):
         else:
             await interaction.followup.send(f"❌ {reason}", ephemeral=True)
 
-    @app_commands.command(name="upload_auth_list", description="[Admin] อัปโหลดไฟล์ .txt รายชื่อผู้มีสิทธิ์ลางาน (MM_YYYY.txt)")
-    @app_commands.describe(file="ไฟล์ .txt เช่น 11_2026.txt")
-    async def upload_auth_list_command(self, interaction: discord.Interaction, file: discord.Attachment):
-        if not config.is_admin(interaction.user.id):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
-        if not file.filename.endswith(".txt"):
-            return await interaction.response.send_message("❌ ต้องเป็นไฟล์นามสกุล `.txt` เท่านั้น", ephemeral=True)
-
-        await interaction.response.defer(ephemeral=True)
-        try:
-            os.makedirs(AUTHORIZED_USERS_DIR, exist_ok=True)
-            save_path = os.path.join(AUTHORIZED_USERS_DIR, file.filename)
-            await file.save(save_path)
-            # อ่านจำนวนคน
-            user_set = leave_service.read_authorized_users(file.filename.replace(".txt", ""))
-            await interaction.followup.send(f"✅ อัปโหลดไฟล์ `{file.filename}` สำเร็จ! (พบผู้มีสิทธิ์ {len(user_set)} คน)", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการบันทึกไฟล์: {e}", ephemeral=True)
-
-    @app_commands.command(name="bot_info", description="แสดงเวอร์ชันและสถานะของบอท")
-    async def show_bot_info(self, interaction: discord.Interaction):
-        embed = discord.Embed(
-            title="ℹ️ ข้อมูลระบบบอท What Universal",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="เวอร์ชัน", value=f"`{config.get('BOT_VERSION')}`", inline=True)
-        embed.add_field(name="เซิร์ฟเวอร์", value=f"`What Universal ({config.guild_id})`", inline=True)
-        embed.add_field(
-            name="สถานะระบบ",
-            value=(
-                f"• Operations: `เปิดทำงาน ✅`\n"
-                f"• Breaktime: `เปิดทำงาน ✅`\n"
-                f"• Duty Tracker: `{'เปิดใช้งาน' if config.get('DUTY_TRACKER_ENABLED') else 'ปิดใช้งานชั่วคราว ⏸️'}`"
-            ),
-            inline=False
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     cog = BreaktimeCog(bot)
