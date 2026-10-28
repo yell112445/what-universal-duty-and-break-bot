@@ -1,4 +1,6 @@
+import asyncio
 import json
+from typing import Optional, Any
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -116,6 +118,26 @@ class ConfigSelectView(View):
                 label="สลับ เปิด/ปิด ลา 3/4 วัน",
                 value="FEATURE_L_3_4_ENABLED",
                 description="true หรือ false"
+            ),
+            discord.SelectOption(
+                label="สลับ เปิด/ปิด Welcome Ticket",
+                value="WELCOME_TICKET_ENABLED",
+                description="true หรือ false"
+            ),
+            discord.SelectOption(
+                label="ช่อง Welcome Ticket Panel",
+                value="WELCOME_TICKET_CHANNEL_ID",
+                description="Channel ID ของห้องกดรับตั๋ว"
+            ),
+            discord.SelectOption(
+                label="ช่อง Join Log สมาชิกเข้าเซิร์ฟ",
+                value="WELCOME_JOIN_LOG_CHANNEL_ID",
+                description="Channel ID ห้อง Log คนเข้า"
+            ),
+            discord.SelectOption(
+                label="ช่อง Data Log สรุปข้อมูลผู้เล่น",
+                value="WELCOME_DATA_LOG_CHANNEL_ID",
+                description="Channel ID ห้อง Log ตั๋วที่เสร็จสิ้น"
             )
         ]
 
@@ -139,7 +161,13 @@ class ConfigSelectView(View):
             "OTP_EXPIRY_MINUTES": "int",
             "MAX_OFF_DUTY_GAP_SECONDS": "int",
             "FEATURE_L_7_ENABLED": "bool",
-            "FEATURE_L_3_4_ENABLED": "bool"
+            "FEATURE_L_3_4_ENABLED": "bool",
+            "WELCOME_TICKET_ENABLED": "bool",
+            "WELCOME_TICKET_CHANNEL_ID": "int",
+            "WELCOME_TICKET_CATEGORY_ID": "int",
+            "WELCOME_DATA_LOG_CHANNEL_ID": "int",
+            "WELCOME_JOIN_LOG_CHANNEL_ID": "int",
+            "LINK_LOG_CHANNEL_ID": "int"
         }
         val_type = val_types.get(key, "str")
         modal = ConfigEditModal(key, str(curr_val), key, val_type)
@@ -194,6 +222,20 @@ class ConfigCog(commands.Cog):
                 f"• Panel Channel: <#{config.get('LEAVE_PANEL_CHANNEL_ID')}>\n"
                 f"• Alert Channel: <#{config.get('ALERT_CHANNEL_ID')}>\n"
                 f"• Max Off-duty Gap: `{config.get('MAX_OFF_DUTY_GAP_SECONDS', 3600)} วินาที`"
+            ),
+            inline=False
+        )
+
+        # หมวดหมู่ 4: Welcome & Introduction
+        embed.add_field(
+            name="🎫 Welcome & Introduction",
+            value=(
+                f"• Welcome Ticket: `{'เปิดใช้งาน ✅' if config.get('WELCOME_TICKET_ENABLED', True) else 'ปิดใช้งานชั่วคราว ⏸️'}`\n"
+                f"• Ticket Panel: <#{config.get('WELCOME_TICKET_CHANNEL_ID')}>\n"
+                f"• Category ID: `{config.get('WELCOME_TICKET_CATEGORY_ID')}`\n"
+                f"• Data Log: <#{config.get('WELCOME_DATA_LOG_CHANNEL_ID')}>\n"
+                f"• Join Log: <#{config.get('WELCOME_JOIN_LOG_CHANNEL_ID')}>\n"
+                f"• Link Log: <#{config.get('LINK_LOG_CHANNEL_ID')}>"
             ),
             inline=False
         )
@@ -271,6 +313,16 @@ class ConfigCog(commands.Cog):
             "LEAVE_PANEL_CHANNEL_ID",
             "FEATURE_L_7_ENABLED",
             "FEATURE_L_3_4_ENABLED",
+            "WELCOME_TICKET_ENABLED",
+            "WELCOME_TICKET_CHANNEL_ID",
+            "WELCOME_TICKET_CATEGORY_ID",
+            "WELCOME_DATA_LOG_CHANNEL_ID",
+            "WELCOME_JOIN_LOG_CHANNEL_ID",
+            "LINK_LOG_CHANNEL_ID",
+            "POLICE_ROLE_ID",
+            "BEGINNER_ROLE_ID",
+            "MD_ROLE_ID",
+            "ASSISTANT_ROLE_ID",
             "GUILD_ID"
         ]
         return [
@@ -317,8 +369,9 @@ class ConfigCog(commands.Cog):
     @app_commands.describe(cog_name="โมดูลที่ต้องการรีโหลด (ค่าเริ่มต้น: รีโหลดทั้งหมด)")
     @app_commands.choices(cog_name=[
         app_commands.Choice(name="ทั้งหมด (All Modules)", value="all"),
-        app_commands.Choice(name="Breaktime (ระบบลางาน)", value="cogs.breaktime"),
+        app_commands.Choice(name="Welcome / Intro (ระบบต้อนรับและกรอกข้อมูล)", value="cogs.introduction"),
         app_commands.Choice(name="Operations (ระบบปฏิบัติการ)", value="cogs.operations"),
+        app_commands.Choice(name="Breaktime (ระบบลางาน)", value="cogs.breaktime"),
         app_commands.Choice(name="Duty Check (ระบบเข้า-ออกเวร)", value="cogs.duty_check"),
         app_commands.Choice(name="Config Cog (ระบบตั้งค่า)", value="cogs.config_cog")
     ])
@@ -328,7 +381,7 @@ class ConfigCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         cogs_to_reload = (
-            ["cogs.config_cog", "cogs.operations", "cogs.breaktime", "cogs.duty_check"]
+            ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.breaktime", "cogs.duty_check"]
             if cog_name == "all" else [cog_name]
         )
 
@@ -358,7 +411,7 @@ class ConfigCog(commands.Cog):
             out_str = stdout.decode().strip() or stderr.decode().strip()
 
             reload_results = []
-            for c in ["cogs.config_cog", "cogs.operations", "cogs.breaktime", "cogs.duty_check"]:
+            for c in ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.breaktime", "cogs.duty_check"]:
                 try:
                     await self.bot.reload_extension(c)
                     reload_results.append(f"✅ `{c}`: อัปเดตสำเร็จ")

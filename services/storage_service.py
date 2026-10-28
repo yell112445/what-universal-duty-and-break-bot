@@ -143,3 +143,21 @@ async def read_leave_db() -> Dict[str, Any]:
 async def write_leave_db(data: Dict[str, Any]) -> bool:
     async with _db_lock:
         return await write_json_file(DB_FILE, data)
+
+# --- 4. Welcome Ticket / Introduction Storage ---
+WELCOME_TICKETS_FILE = os.path.join(DATA_DIR, "welcome_tickets.json")
+_welcome_lock = asyncio.Lock()
+
+async def load_welcome_tickets() -> Dict[str, Any]:
+    async with _welcome_lock:
+        data = await read_json_file(WELCOME_TICKETS_FILE, None)
+        if data is None or not isinstance(data, dict):
+            data = {"_system": {"enabled": True}, "tickets": {}}
+        data.setdefault("_system", {"enabled": True})
+        data.setdefault("tickets", {})
+        return data
+
+async def save_welcome_tickets(data: Dict[str, Any]) -> bool:
+    async with _welcome_lock:
+        return await write_json_file(WELCOME_TICKETS_FILE, data)
+
