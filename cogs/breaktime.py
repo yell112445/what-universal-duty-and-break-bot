@@ -59,11 +59,11 @@ class CleanLeaveRequestModal(Modal):
             max_length=20
         )
         self.days_input = TextInput(
-            label="จำนวนวันที่ต้องการลา (วัน)",
-            placeholder="เช่น 1, 3, 5, 7",
+            label="จำนวนวันที่ต้องการลา (วัน) [สูงสุด 7 วัน]",
+            placeholder="ระบุตัวเลข 1 ถึง 7 วัน",
             style=discord.TextStyle.short,
             required=True,
-            max_length=3
+            max_length=1
         )
         self.reason_input = TextInput(
             label="เหตุผลการลา",
@@ -94,13 +94,13 @@ class CleanLeaveRequestModal(Modal):
         if req_start_date < today:
             return await interaction.followup.send("❌ ไม่สามารถยื่นลาย้อนหลังได้ครับ", ephemeral=True)
 
-        # แปลงจำนวนวัน
+        # แปลงจำนวนวัน (สูงสุดไม่เกิน 7 วัน)
         try:
             days = int(self.days_input.value.strip())
-            if days <= 0 or days > 30:
-                return await interaction.followup.send("❌ จำนวนวันลาต้องอยู่ระหว่าง 1 ถึง 30 วัน", ephemeral=True)
+            if days <= 0 or days > 7:
+                return await interaction.followup.send("❌ สามารถลาได้สูงสุดไม่เกิน 7 วันต่อครั้ง (กรอก 1 - 7 วัน)", ephemeral=True)
         except ValueError:
-            return await interaction.followup.send("❌ กรุณากรอกจำนวนวันเป็นตัวเลขจำนวนเต็ม (เช่น 3)", ephemeral=True)
+            return await interaction.followup.send("❌ กรุณากรอกจำนวนวันเป็นตัวเลขจำนวนเต็ม 1 ถึง 7", ephemeral=True)
 
         req_end_date = req_start_date + timedelta(days=days - 1)
         reason = self.reason_input.value.strip()
@@ -108,7 +108,7 @@ class CleanLeaveRequestModal(Modal):
         all_data = await read_leave_db()
         records = all_data.get("leave_records", [])
         user_id = str(interaction.user.id)
-        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY") or config.get("MAX_LEAVES_SAME_DAY") or 5)
 
         # ตรวจสอบว่ามีลาซ้ำในช่วงเวลาเดียวกันหรือไม่
         for r in records:
@@ -211,7 +211,7 @@ class CleanLeaveBoardView(View):
         records = all_data.get("leave_records", [])
         user_id = str(interaction.user.id)
         today = datetime.now(config.timezone).date()
-        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY") or config.get("MAX_LEAVES_SAME_DAY") or 5)
 
         today_count = 0
         user_active_leave = None
@@ -241,6 +241,7 @@ class CleanLeaveBoardView(View):
 
         rem_quota = max(0, max_quota - today_count)
         embed.add_field(name="โควตาวันนี้", value=f"`{today_count} / {max_quota}` คน (ว่าง {rem_quota} ที่)", inline=True)
+        embed.add_field(name="เพดานและเงื่อนไขการลา", value="• โควตาสูงสุด: วันละไม่เกิน `5` คน (ห้ามเกิน)\n• ระยะเวลาลา: สูงสุดไม่เกิน `7` วันต่อครั้ง", inline=False)
         embed.set_footer(text="What Universal Leave System")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -296,7 +297,7 @@ class BreaktimeCog(commands.Cog):
         all_records = all_data.get("leave_records", [])
         today = datetime.now(config.timezone).date()
         today_iso = today.isoformat()
-        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY") or config.get("MAX_LEAVES_SAME_DAY") or 5)
 
         on_leave_list = []
         queued_list = []

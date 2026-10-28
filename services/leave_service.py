@@ -243,7 +243,7 @@ async def process_leave_request(user_id: str, request_start_date: date, duration
 
     # ตรวจสอบโควต้าวันเริ่มลาเดียวกัน
     active_leaves = [r for r in all_records if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]]
-    max_same_day = int(config.get("MAX_LEAVES_SAME_DAY", 3))
+    max_same_day = int(config.get("MAX_LEAVE_PER_DAY") or config.get("MAX_LEAVES_SAME_DAY") or 5)
 
     leaves_starting_on_day = sum(1 for r in active_leaves if r.get("start_date") == request_start_date.isoformat())
     if leaves_starting_on_day >= max_same_day:

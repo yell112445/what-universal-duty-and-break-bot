@@ -393,11 +393,12 @@ class OperationsCog(commands.Cog):
         self.refresh_status_message_loop.cancel()
 
     def is_assistant_or_above(self, interaction: discord.Interaction) -> bool:
-        if config.is_assistant_or_above(interaction.user.id):
+        """ตรวจสอบสิทธิ์คำสั่ง Operations: ยกเลิกเช็ครายคน ให้สิทธิ์เฉพาะ Role 1506299600829550653 และ Owner"""
+        if config.is_owner(interaction.user.id):
             return True
-        ast_role_id = config.get("ASSISTANT_ROLE_ID")
-        if ast_role_id and isinstance(interaction.user, discord.Member):
-            if interaction.user.get_role(int(ast_role_id)):
+        op_role_id = int(config.get("OPERATION_ROLE_ID") or config.get("ASSISTANT_ROLE_ID") or 1506299600829550653)
+        if isinstance(interaction.user, discord.Member):
+            if interaction.user.get_role(op_role_id):
                 return True
         return False
 
