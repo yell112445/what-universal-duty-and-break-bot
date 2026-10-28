@@ -191,6 +191,22 @@ class OTPModal(Modal):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+class DisabledOperationView(View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Check-in", style=discord.ButtonStyle.secondary, custom_id="operation_checkin_disabled", disabled=True, row=0)
+    async def checkin_disabled(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว ไม่สามารถลงเวลาได้", ephemeral=True)
+
+    @discord.ui.button(label="Check-out", style=discord.ButtonStyle.secondary, custom_id="operation_checkout_disabled", disabled=True, row=0)
+    async def checkout_disabled(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
+
+    @discord.ui.button(label="My Status", style=discord.ButtonStyle.secondary, custom_id="operation_status_disabled", disabled=True, row=0)
+    async def status_disabled(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
+
 class OperationView(View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -679,55 +695,27 @@ class OperationsCog(commands.Cog):
         """อัปเดต Embed สถานะกำลังพลที่ปฏิบัติการอยู่แบบ Realtime ต่อเนื่อง"""
         await self.update_status_message()
 
-    @tasks.loop(minutes=1)
+    @tasks.loop(seconds=15)
     async def check_auto_stop_loop(self):
-        """ตรวจสอบและหยุดรอบปฏิบัติการอัตโนมัติตามเวลาที่กำหนดไว้"""
+        """ตรวจสอบและหยุดรอบปฏิบัติการอัตโนมัติตามเวลาที่กำหนดไว้ (เช็คจาก Timestamp ป้องกันการพลาดนาที)"""
         try:
             op_status = await load_operation_status()
             if not op_status.get("status_message_id"):
                 return
 
             now_local = datetime.now(config.timezone)
-            now_time_str = now_local.strftime("%H:%M")
-            raw_stop_times = config.get("AUTO_STOP_TIMES") or DEFAULT_AUTO_STOP_TIMES
-            auto_stop_times = extract_time_list(raw_stop_times) or DEFAULT_AUTO_STOP_TIMES
-            temp_stop = op_status.get("temp_auto_stop")
-            if temp_stop:
-                parsed_temp = extract_time_list(temp_stop)
-                temp_stop = parsed_temp[0] if parsed_temp else temp_stop
+            now_ts = int(now_local.timestamp())
 
-            # ตรวจสอบเวลาหยุด (รอบปกติจาก config หรือรอบที่ตั้งชั่วคราว)
-            if now_time_str in auto_stop_times or (temp_stop and now_time_str == temp_stop):
-                logger.info(f"[OperationsCog] Auto-stop triggered at {now_time_str} (temp_stop={temp_stop})")
+            auto_stop_ts = op_status.get("auto_stop_ts")
+            if not auto_stop_ts:
+                active_stop = op_status.get("temp_auto_stop") or op_status.get("stop_time")
+                auto_stop_ts = get_next_auto_stop_ts(active_stop)
+
+            # ตรวจสอบว่าถึงเวลาตัดรอบหรือยัง (เทียบ Unix timestamp โดยตรง แม่นยำระดับวินาที)
+            if auto_stop_ts and now_ts >= auto_stop_ts:
+                logger.info(f"[OperationsCog] Auto-stop triggered! now_ts={now_ts} >= auto_stop_ts={auto_stop_ts}")
                 await self.execute_stop(interaction=None, source="auto_stop")
                 return
-
-            # แจ้งเตือนล่วงหน้าก่อนปิดรอบ
-            announce_min = int(config.get("AUTO_STOP_ANNOUNCE_MINUTES", 10))
-            future_time_str = (now_local + timedelta(minutes=announce_min)).strftime("%H:%M")
-            if future_time_str in auto_stop_times or (temp_stop and future_time_str == temp_stop):
-                last_announced = op_status.get("last_auto_stop_announced")
-                if last_announced != future_time_str:
-                    op_status["last_auto_stop_announced"] = future_time_str
-                    await save_operation_status(op_status)
-
-                    status_ch_id = op_status.get("status_channel_id")
-                    if status_ch_id:
-                        ch = await self.get_channel(status_ch_id)
-                        if ch:
-                            stop_target_dt = now_local + timedelta(minutes=announce_min)
-                            stop_ts = int(stop_target_dt.timestamp())
-                            embed = discord.Embed(
-                                title="AUTO-STOP ANNOUNCEMENT",
-                                description=(
-                                    f"ระบบจะทำการตัดรอบเวลาทำงานอัตโนมัติในอีก **{announce_min} นาที**\n"
-                                    f"• เวลาตัดรอบ: <t:{stop_ts}:t> (<t:{stop_ts}:R>)\n\n"
-                                    f"-# กรุณาเคลียร์งานที่ค้างอยู่ให้เรียบร้อยก่อนระบบตัดรอบ"
-                                ),
-                                color=discord.Color.from_rgb(237, 66, 69)
-                            )
-                            embed.set_footer(text="What Universal • Auto Termination Service")
-                            await ch.send(embed=embed)
         except Exception as e:
             logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}")
 
@@ -805,7 +793,7 @@ class OperationsCog(commands.Cog):
             except Exception:
                 pass
 
-        # แก้ไขข้อความสถานะเดิมเป็นสรุปผล
+        # แก้ไขข้อความสถานะเดิม: เปลี่ยนสี Embed เป็นสีเทา ปรับสถานะเป็น Closed และ Block ปุ่ม (Disabled)
         status_msg_id = op_status.get("status_message_id")
         status_ch_id = op_status.get("status_channel_id")
         if status_msg_id and status_ch_id:
@@ -813,18 +801,26 @@ class OperationsCog(commands.Cog):
                 ch = await self.get_channel(status_ch_id)
                 if ch:
                     msg = await ch.fetch_message(int(status_msg_id))
+                    c_slate = discord.Color.from_rgb(47, 49, 54)
+                    now_ts = int(now_dt.timestamp())
                     embed = discord.Embed(
-                        title="SESSION CONCLUDED",
-                        description=(
-                            f"รอบบันทึกเวลาสิ้นสุดลงเมื่อ `{now_dt.strftime('%H:%M:%S')}`\n"
-                            f"-# สรุปภาพรวมชั่วโมงการทำงานของทุกคนในรอบนี้"
-                        ),
-                        color=discord.Color.from_rgb(47, 49, 54),
+                        title="WHAT UNIVERSAL — TIME TRACKER",
+                        description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+                        color=c_slate,
                         timestamp=now_dt
                     )
+                    embed.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+                    embed.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
+                    embed.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
+
                     lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
-                    embed.add_field(name="สรุปเวลาทำงานรอบนี้", value="\n".join(lines[:25]) if lines else "*(ไม่มีผู้ลงเวลาค้างในรอบนี้)*")
-                    await msg.edit(embed=embed, view=None)
+                    embed.add_field(
+                        name="สรุปเวลาทำงานรอบนี้",
+                        value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
+                        inline=False
+                    )
+                    embed.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+                    await msg.edit(embed=embed, view=DisabledOperationView())
             except Exception as e:
                 logger.error(f"[OperationsCog] Failed to edit status message on stop: {e}")
 
@@ -888,6 +884,7 @@ class OperationsCog(commands.Cog):
         op_status = {
             "start_time": now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
             "stop_time": stop_time,
+            "auto_stop_ts": auto_stop_ts,
             "status_message_id": status_msg.id,
             "status_channel_id": interaction.channel.id,
             "button_messages": [{"channel_id": status_msg.channel.id, "message_id": status_msg.id}],
@@ -965,8 +962,10 @@ class OperationsCog(commands.Cog):
         if not op_status.get("status_message_id"):
             return await interaction.followup.send("⚠️ ขณะนี้ไม่มีรอบการปฏิบัติงานที่เปิดอยู่", ephemeral=True)
 
+        auto_stop_ts = get_next_auto_stop_ts(time)
         op_status["temp_auto_stop"] = time
         op_status["stop_time"] = time
+        op_status["auto_stop_ts"] = auto_stop_ts
         await save_operation_status(op_status)
         await self.update_status_message()
 
@@ -1122,3 +1121,4 @@ async def setup(bot: commands.Bot):
     cog = OperationsCog(bot)
     await bot.add_cog(cog)
     bot.add_view(OperationView())
+    bot.add_view(DisabledOperationView())

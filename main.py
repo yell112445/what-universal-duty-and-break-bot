@@ -52,7 +52,7 @@ class WhatUniversalBot(commands.Bot):
         cogs = [
             "cogs.config_cog",
             "cogs.operations",
-            # "cogs.breaktime",  # ปิดใช้งานชั่วคราวตามที่ผู้ใช้ร้องขอ (รอปรับแก้)
+            "cogs.breaktime",
             "cogs.duty_check",
             "cogs.introduction",
             "cogs.ui_preview"

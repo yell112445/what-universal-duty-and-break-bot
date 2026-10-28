@@ -416,6 +416,25 @@ class BreaktimeCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- Slash Commands ---
+    @app_commands.command(name="leave_setup", description="[Admin/Owner] ติดตั้งและส่งแผง Leave Board ลงในห้องที่กำหนด")
+    @app_commands.describe(channel="เลือกห้องที่ต้องการให้แสดง Leave Board (เว้นว่างเพื่อใช้ห้องปัจจุบัน)")
+    async def leave_setup_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
+        if not (config.is_admin(interaction.user.id) or config.is_owner(interaction.user.id)):
+            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+
+        target_ch = channel or interaction.channel
+        await interaction.response.defer(ephemeral=True)
+
+        await config.set("LEAVE_BOARD_CHANNEL_ID", target_ch.id)
+        await config.set("LEAVE_PANEL_CHANNEL_ID", target_ch.id)
+
+        all_data = await read_leave_db()
+        all_data["leave_board_message_id"] = None
+        await write_leave_db(all_data)
+
+        await self.update_leave_board()
+        await interaction.followup.send(f"✅ ติดตั้งแผง Leave Board สำเร็จที่ห้อง {target_ch.mention} เรียบร้อยแล้ว!", ephemeral=True)
+
     @app_commands.command(name="leave", description="เริ่มต้นกระบวนการขอลางาน")
     async def leave_command(self, interaction: discord.Interaction):
         await interaction.response.send_modal(CleanLeaveRequestModal(self))
