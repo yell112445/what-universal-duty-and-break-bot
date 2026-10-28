@@ -13,17 +13,23 @@ from services.storage_service import read_leave_db, write_leave_db, AUTHORIZED_U
 from services import leave_service
 
 TYPE_MAP = {
+    "GENERAL": "ลางานทั่วไป",
     "L_3_4": "ลา 4/3 วัน (ย่อย)",
     "L_7": "ลาพักร้อน 7 วัน (เหมา)",
     "BYPASS": "ลา (Bypass/Admin)"
 }
 
 STATUS_MAP = {
-    "ON_LEAVE": "🟢 กำลังลา",
-    "EXPIRED_PENDING_RETURN": "🔴 หมดอายุ (รอกลับ)",
-    "COMPLETED": "⚪ กลับเข้าเวรแล้ว",
-    "CANCELLED": "❌ ยกเลิกแล้ว"
+    "ON_LEAVE": "กำลังลา",
+    "EXPIRED_PENDING_RETURN": "ครบกำหนด",
+    "COMPLETED": "เสร็จสิ้น",
+    "CANCELLED": "ยกเลิกแล้ว"
 }
+
+def clean_name(name: str) -> str:
+    if not name:
+        return "Unknown"
+    return name.replace("\r", " ").replace("\n", " ").strip()
 
 def _build_truncated_field(lines: list[str], empty_message: str, limit: int = 1024) -> str:
     if not lines:
@@ -41,166 +47,202 @@ def _build_truncated_field(lines: list[str], empty_message: str, limit: int = 10
         value += f"...(และอีก {remaining} รายการ)"
     return value.strip()
 
-class ConfirmLateLeaveView(View):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.value = None
-
-    @discord.ui.button(label="ยืนยัน (ใช้สิทธิ์วันนี้)", style=discord.ButtonStyle.primary)
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = True
-        self.stop()
-        await interaction.response.edit_message(content="⏳ ยืนยันสำเร็จ กำลังดำเนินการต่อ...", view=None)
-
-    @discord.ui.button(label="ยกเลิก (ไม่ลา)", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.value = False
-        self.stop()
-        await interaction.response.edit_message(content="👍 การขอลายกเลิกแล้ว", view=None)
-
-class LeaveRequestModal(Modal):
-    def __init__(self, cog: 'BreaktimeCog', leave_type: str, duration_days: int):
-        super().__init__(title=f"ขอลางาน: {TYPE_MAP.get(leave_type, leave_type)}")
+class CleanLeaveRequestModal(Modal):
+    def __init__(self, cog: 'BreaktimeCog'):
+        super().__init__(title="ยื่นคำขอลางาน")
         self.cog = cog
-        self.leave_type = leave_type
-        self.duration_days = duration_days
-
         self.start_date_input = TextInput(
-            label="วันที่เริ่ม (DD/MM/YYYY)",
-            placeholder="ตัวอย่าง: 20/11/2026",
+            label="วันเริ่มลา (Start Date)",
+            placeholder="เช่น วันนี้ หรือ 29/10/2026",
             style=discord.TextStyle.short,
-            required=True
+            required=True,
+            max_length=20
+        )
+        self.days_input = TextInput(
+            label="จำนวนวันที่ต้องการลา (วัน)",
+            placeholder="เช่น 1, 3, 5, 7",
+            style=discord.TextStyle.short,
+            required=True,
+            max_length=3
+        )
+        self.reason_input = TextInput(
+            label="เหตุผลการลา",
+            placeholder="เช่น ติดธุระส่วนตัว / ไปต่างจังหวัด",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=200
         )
         self.add_item(self.start_date_input)
+        self.add_item(self.days_input)
+        self.add_item(self.reason_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True, thinking=True)
-        start_date_str = self.start_date_input.value.strip()
+        date_str = self.start_date_input.value.strip().lower()
+        now_dt = datetime.now(config.timezone)
+        today = now_dt.date()
 
-        try:
-            req_start_date = datetime.strptime(start_date_str, "%d/%m/%Y").date()
-        except ValueError:
-            return await interaction.followup.send("❌ **Format วันที่ผิด** กรุณาใช้ `DD/MM/YYYY` (เช่น 20/11/2026)", ephemeral=True)
-
-        if req_start_date.year > 2100:
-            return await interaction.followup.send(
-                f"❌ **ปีไม่ถูกต้อง** กรุณาใช้ปี ค.ศ. เช่น 2026 *(คุณกรอก: {req_start_date.year})*",
-                ephemeral=True
-            )
-
-        now = datetime.now(config.timezone)
-        today = now.date()
+        # แปลงวันที่เริ่มลา
+        if date_str in ["วันนี้", "today"]:
+            req_start_date = today
+        else:
+            try:
+                req_start_date = datetime.strptime(date_str, "%d/%m/%Y").date()
+            except ValueError:
+                return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณาใช้ `วันนี้` หรือ `DD/MM/YYYY` (เช่น 29/10/2026)", ephemeral=True)
 
         if req_start_date < today:
-            return await interaction.followup.send("❌ **วันที่ไม่ถูกต้อง** ไม่อนุญาตให้เริ่มลาในวันที่ผ่านไปแล้ว", ephemeral=True)
+            return await interaction.followup.send("❌ ไม่สามารถยื่นลาย้อนหลังได้ครับ", ephemeral=True)
 
-        if req_start_date.month != today.month or req_start_date.year != today.year:
-            return await interaction.followup.send(
-                "❌ **ไม่สามารถจองล่วงหน้าข้ามเดือนได้** ระบบอนุญาตให้จองได้เฉพาะภายในเดือนปัจจุบันเท่านั้น",
-                ephemeral=True
-            )
+        # แปลงจำนวนวัน
+        try:
+            days = int(self.days_input.value.strip())
+            if days <= 0 or days > 30:
+                return await interaction.followup.send("❌ จำนวนวันลาต้องอยู่ระหว่าง 1 ถึง 30 วัน", ephemeral=True)
+        except ValueError:
+            return await interaction.followup.send("❌ กรุณากรอกจำนวนวันเป็นตัวเลขจำนวนเต็ม (เช่น 3)", ephemeral=True)
 
-        # แจ้งเตือนหากลาหลัง 18:00
-        LATE_NIGHT_THRESHOLD_HOUR = 18
-        if req_start_date == today and now.hour >= LATE_NIGHT_THRESHOLD_HOUR:
-            midnight_today = datetime.combine(now.date(), datetime.min.time(), tzinfo=config.timezone)
-            time_lost = now - midnight_today
-            total_seconds = int(time_lost.total_seconds())
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
-            time_lost_str = f"**{hours} ชั่วโมง {minutes} นาที**"
+        req_end_date = req_start_date + timedelta(days=days - 1)
+        reason = self.reason_input.value.strip()
 
-            confirmation_view = ConfirmLateLeaveView(timeout=60)
-            embed = discord.Embed(
-                title="⚠️ โปรดยืนยัน (ป้องกันการเสียสิทธิ์)",
-                color=discord.Color.orange(),
-                description=(
-                    f"คุณกำลังลงลา 'วันนี้' ({req_start_date.strftime('%d/%m')}) ในเวลา {now.strftime('%H:%M')} น.\n\n"
-                    f"หมายความว่าคุณจะ **เสียสิทธิ์ของวันนี้ไป** {time_lost_str} (จากเต็มวัน)\n\n"
-                    f"**คุณแน่ใจหรือไม่ว่าต้องการดำเนินการต่อ?**\n"
-                    f"*(หากกดยกเลิก กรุณากดลาใหม่อีกครั้งและเลือกวันพรุ่งนี้)*"
+        all_data = await read_leave_db()
+        records = all_data.get("leave_records", [])
+        user_id = str(interaction.user.id)
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
+
+        # ตรวจสอบว่ามีลาซ้ำในช่วงเวลาเดียวกันหรือไม่
+        for r in records:
+            if r.get("user_id") == user_id and r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+                try:
+                    r_st = date.fromisoformat(r["start_date"])
+                    r_en = date.fromisoformat(r["end_date"])
+                    if not (req_end_date < r_st or req_start_date > r_en):
+                        return await interaction.followup.send("⚠️ คุณมีรายการลาในช่วงเวลาดังกล่าวอยู่แล้วครับ", ephemeral=True)
+                except Exception:
+                    pass
+
+        # ตรวจสอบโควตาจำนวนคนลาในแต่ละวัน
+        curr_d = req_start_date
+        while curr_d <= req_end_date:
+            cnt = 0
+            for r in records:
+                if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+                    try:
+                        r_st = date.fromisoformat(r["start_date"])
+                        r_en = date.fromisoformat(r["end_date"])
+                        if r_st <= curr_d <= r_en:
+                            cnt += 1
+                    except Exception:
+                        pass
+            if cnt >= max_quota:
+                return await interaction.followup.send(
+                    f"❌ ไม่สามารถขอลางานได้ เนื่องจากวันที่ `{curr_d.strftime('%d/%m/%Y')}` มีคนลาเต็มโควตาแล้ว ({cnt}/{max_quota} คน)",
+                    ephemeral=True
                 )
-            )
-            await interaction.followup.send(embed=embed, view=confirmation_view, ephemeral=True)
-            await confirmation_view.wait()
+            curr_d += timedelta(days=1)
 
-            if confirmation_view.value is None:
-                return await interaction.followup.send("⌛ หมดเวลาตอบกลับ การขอลายกเลิก", ephemeral=True)
-            elif confirmation_view.value is False:
-                return
+        # บันทึกลงฐานข้อมูล
+        new_record = {
+            "user_id": user_id,
+            "user_name": clean_name(interaction.user.display_name),
+            "leave_type": "GENERAL",
+            "start_date": req_start_date.isoformat(),
+            "end_date": req_end_date.isoformat(),
+            "duration_days": days,
+            "reason": reason,
+            "status": "ON_LEAVE",
+            "created_at": now_dt.isoformat()
+        }
+        records.append(new_record)
+        all_data["leave_records"] = records
+        await write_leave_db(all_data)
 
-        user_id = str(interaction.user.id)
-        is_success, reason = await leave_service.process_leave_request(
-            user_id=user_id,
-            request_start_date=req_start_date,
-            duration_days=self.duration_days,
-            leave_type=self.leave_type
+        # อัปเดตบอร์ดรวมทันที
+        if self.cog:
+            await self.cog.update_leave_board()
+
+        start_ts = int(datetime.combine(req_start_date, datetime.min.time(), tzinfo=config.timezone).timestamp())
+        end_ts = int(datetime.combine(req_end_date, datetime.min.time(), tzinfo=config.timezone).timestamp())
+
+        await interaction.followup.send(
+            f"**ยื่นคำขอลางานเรียบร้อยแล้ว**\n"
+            f"• วันที่: <t:{start_ts}:D> — <t:{end_ts}:D> (`{days} วัน`)\n"
+            f"• เหตุผล: `{reason}`\n\n"
+            f"-# ระบบบันทึกข้อมูลและอัปเดตลงบอร์ดเรียบร้อยแล้วครับ",
+            ephemeral=True
         )
 
-        if is_success:
-            await interaction.followup.send(f"✅ **อนุมัติ** {reason}", ephemeral=True)
-            await self.cog.update_leave_board()
-        else:
-            await interaction.followup.send(f"❌ **ไม่อนุมัติ** {reason}", ephemeral=True)
-
-class ReturnToDutyModal(Modal):
-    def __init__(self, cog: 'BreaktimeCog'):
-        super().__init__(title="ยืนยันการกลับเข้าเวร")
-        self.cog = cog
-        self.confirming_officer_input = TextInput(
-            label="ชื่อผู้รับเข้าเวร (Confirming Officer)",
-            placeholder="กรอกชื่อในเกมของคนที่รับคุณกลับเข้าเวร",
-            style=discord.TextStyle.short,
-            required=True,
-            min_length=3
-        )
-        self.add_item(self.confirming_officer_input)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        officer_name = self.confirming_officer_input.value.strip()
-        user_id = str(interaction.user.id)
-        is_success, reason = await leave_service.process_return_to_duty(user_id, officer_name)
-        if is_success:
-            await interaction.followup.send(f"✅ **บันทึกการกลับเข้าเวรสำเร็จ**\n{reason}", ephemeral=True)
-            await self.cog.update_leave_board()
-        else:
-            await interaction.followup.send(f"❌ **ล้มเหลว**\n{reason}", ephemeral=True)
-
-class LeaveTypeView(View):
+class CleanLeaveBoardView(View):
     def __init__(self, cog: Optional['BreaktimeCog'] = None):
         super().__init__(timeout=None)
         self.cog = cog
 
-    async def run_pre_checks(self, interaction: discord.Interaction, leave_type: str) -> tuple[bool, int]:
+    # ปุ่ม 1: ฟ้า (Primary) - ยื่นลา
+    @discord.ui.button(label="ยื่นลา", style=discord.ButtonStyle.primary, custom_id="breaktime_request_leave", row=0)
+    async def request_button(self, interaction: discord.Interaction, button: Button):
+        cog = self.cog or interaction.client.get_cog("BreaktimeCog")
+        await interaction.response.send_modal(CleanLeaveRequestModal(cog))
+
+    # ปุ่ม 2: เทา (Secondary) - เช็คสิทธิ์
+    @discord.ui.button(label="เช็คสิทธิ์", style=discord.ButtonStyle.secondary, custom_id="breaktime_check_quota", row=0)
+    async def check_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+        all_data = await read_leave_db()
+        records = all_data.get("leave_records", [])
         user_id = str(interaction.user.id)
-        user_role_ids = [role.id for role in interaction.user.roles]
-        is_success, reason, duration_days = await leave_service.perform_pre_checks(user_id, user_role_ids, leave_type)
-        if not is_success:
-            await interaction.response.send_message(f"❌ **ไม่อนุญาตให้ลา**\n{reason}", ephemeral=True)
-            return (False, 0)
-        return (True, duration_days)
+        today = datetime.now(config.timezone).date()
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
 
-    @discord.ui.button(label="ลา 4/3 วัน (ย่อย)", style=discord.ButtonStyle.secondary, custom_id="leave_3_4")
-    async def leave_3_4_callback(self, interaction: discord.Interaction, button: Button):
-        is_success, duration_days = await self.run_pre_checks(interaction, "L_3_4")
-        if not is_success:
-            return
-        await interaction.response.send_modal(LeaveRequestModal(self.cog, "L_3_4", duration_days))
+        today_count = 0
+        user_active_leave = None
+        for r in records:
+            if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+                try:
+                    r_st = date.fromisoformat(r["start_date"])
+                    r_en = date.fromisoformat(r["end_date"])
+                    if r_st <= today <= r_en:
+                        today_count += 1
+                        if r.get("user_id") == user_id:
+                            user_active_leave = r
+                except Exception:
+                    pass
 
-    @discord.ui.button(label="ลาพักร้อน 7 วัน (เหมา)", style=discord.ButtonStyle.primary, custom_id="leave_7")
-    async def leave_7_callback(self, interaction: discord.Interaction, button: Button):
-        is_success, duration_days = await self.run_pre_checks(interaction, "L_7")
-        if not is_success:
-            return
-        await interaction.response.send_modal(LeaveRequestModal(self.cog, "L_7", duration_days))
+        embed = discord.Embed(
+            title="สิทธิ์การลางานของคุณ",
+            description=f"**ผู้ใช้งาน:** {interaction.user.mention}\n-# ตรวจสอบโควตาและสถานะการลา",
+            color=discord.Color.from_rgb(88, 101, 242)
+        )
+        if user_active_leave:
+            end_d = user_active_leave.get("end_date", "-")
+            rem = (date.fromisoformat(end_d) - today).days if end_d != "-" else 0
+            embed.add_field(name="สถานะของคุณ", value=f"`กำลังลา` (สิ้นสุด `{end_d}` เหลือ {max(0, rem)} วัน)", inline=False)
+        else:
+            embed.add_field(name="สถานะของคุณ", value="`ปกติ` (สามารถยื่นลาได้)", inline=True)
 
-    @discord.ui.button(label="กลับเข้าเวร (Return to Duty)", style=discord.ButtonStyle.danger, custom_id="return_to_duty")
-    async def return_to_duty_callback(self, interaction: discord.Interaction, button: Button):
-        is_success, reason = await leave_service.perform_return_pre_check(str(interaction.user.id))
-        if not is_success:
-            return await interaction.response.send_message(f"❌ **ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
-        await interaction.response.send_modal(ReturnToDutyModal(self.cog))
+        rem_quota = max(0, max_quota - today_count)
+        embed.add_field(name="โควตาวันนี้", value=f"`{today_count} / {max_quota}` คน (ว่าง {rem_quota} ที่)", inline=True)
+        embed.set_footer(text="What Universal Leave System")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+class LeaveTypeView(View):
+    """View ดั้งเดิมสำหรับความเข้ากันได้ย้อนหลัง 100%"""
+    def __init__(self, cog: Optional['BreaktimeCog'] = None):
+        super().__init__(timeout=None)
+        self.cog = cog
+
+    @discord.ui.button(label="ยื่นคำขอลางาน", style=discord.ButtonStyle.primary, custom_id="leave_3_4")
+    async def legacy_l3_4(self, interaction: discord.Interaction, button: Button):
+        cog = self.cog or interaction.client.get_cog("BreaktimeCog")
+        await interaction.response.send_modal(CleanLeaveRequestModal(cog))
+
+    @discord.ui.button(label="เช็คสิทธิ์", style=discord.ButtonStyle.secondary, custom_id="leave_7")
+    async def legacy_l7(self, interaction: discord.Interaction, button: Button):
+        view = CleanLeaveBoardView(self.cog)
+        await view.check_button.callback(view, interaction)
+
+    @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.secondary, custom_id="return_to_duty")
+    async def legacy_return(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_message("สถานะระบบลาถูกปรับปรุงเป็นระบบโควตาวันลาเรียบร้อยแล้ว ไม่จำเป็นต้องกดกลับเข้าเวรครับ", ephemeral=True)
 
 class BreaktimeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -213,7 +255,7 @@ class BreaktimeCog(commands.Cog):
         self.ping_heartbeat_loop.cancel()
 
     async def update_leave_board(self):
-        """อ่าน DB แล้วอัปเดตหรือซ่อมแซมข้อความ Leave Board"""
+        """อ่าน DB แล้วอัปเดตกระดาน Leave Board แบบ Clean รวมข้อความเดียวพร้อมปุ่ม"""
         all_data = await read_leave_db()
         board_message_id = all_data.get("leave_board_message_id")
         board_channel_id = config.get("LEAVE_BOARD_CHANNEL_ID")
@@ -231,124 +273,76 @@ class BreaktimeCog(commands.Cog):
             except (discord.NotFound, discord.HTTPException):
                 message = None
 
-        on_leave_list, queued_list, expired_list, history_list = [], [], [], []
         all_records = all_data.get("leave_records", [])
-        user_data = all_data.get("user_data", {})
         today = datetime.now(config.timezone).date()
-        today_str = today.isoformat()
+        today_iso = today.isoformat()
+        max_quota = int(config.get("MAX_LEAVE_PER_DAY", 5))
+
+        on_leave_list = []
+        queued_list = []
+        today_count = 0
 
         all_records.sort(key=lambda x: x.get("start_date", "9999-12-31"))
 
-        for record in all_records:
-            status = record.get("status")
-            user_id = record.get("user_id")
-            leave_type = record.get("leave_type", "N/A")
-            leave_type_display = TYPE_MAP.get(leave_type, leave_type)
-            start_date = record.get("start_date", "1970-01-01")
-            end_date = record.get("end_date", "1970-01-01")
+        for r in all_records:
+            if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+                uid = r.get("user_id")
+                st = r.get("start_date", today_iso)
+                en = r.get("end_date", today_iso)
+                dur = r.get("duration_days", 1)
 
-            try:
-                start_date_fmt = date.fromisoformat(start_date).strftime("%d/%m/%Y")
-                end_date_fmt = date.fromisoformat(end_date).strftime("%d/%m/%Y")
-            except Exception:
-                start_date_fmt = start_date
-                end_date_fmt = end_date
-
-            if status == "ON_LEAVE":
-                if start_date <= today_str:
-                    on_leave_list.append(f"<@{user_id}>\n   - (ประเภท: {leave_type_display}, ถึง: {end_date_fmt})")
-                else:
-                    queued_list.append(f"<@{user_id}>\n   - (ประเภท: {leave_type_display}, **เริ่ม: {start_date_fmt}** ถึง: {end_date_fmt})")
-            elif status == "EXPIRED_PENDING_RETURN":
-                days_overdue_str = ""
                 try:
-                    end_obj = date.fromisoformat(end_date)
-                    overdue = (today - end_obj).days
-                    days_overdue_str = f"เลยกำหนด {overdue} วัน" if overdue > 0 else "ครบกำหนด (วันนี้)"
+                    st_d = date.fromisoformat(st)
+                    en_d = date.fromisoformat(en)
                 except Exception:
-                    pass
-                expired_list.append(f"<@{user_id}>\n   - (⚠️ **{days_overdue_str}** รอกดกลับเข้าเวร)")
-            elif status == "COMPLETED":
-                master_cooldown = leave_service.get_master_cooldown_date(all_records, user_data, user_id)
-                if today < master_cooldown:
-                    officer = record.get("confirming_officer", "N/A")
-                    late_str = ""
-                    return_ts = record.get("return_timestamp")
-                    if return_ts:
-                        try:
-                            ret_dt = datetime.fromisoformat(return_ts)
-                            end_obj = date.fromisoformat(end_date)
-                            deadline_dt = datetime.combine(end_obj + timedelta(days=1), datetime.min.time(), tzinfo=config.timezone)
-                            diff = ret_dt - deadline_dt
-                            if diff.total_seconds() > 0:
-                                total_sec = int(diff.total_seconds())
-                                d, rem = divmod(total_sec, 86400)
-                                h, rem = divmod(rem, 3600)
-                                m, _ = divmod(rem, 60)
-                                parts = []
-                                if d > 0: parts.append(f"{d} วัน")
-                                if h > 0: parts.append(f"{h} ชม.")
-                                if m > 0: parts.append(f"{m} นาที")
-                                if parts: late_str = f", เลยกำหนด {', '.join(parts)}"
-                        except Exception:
-                            pass
-                    history_list.append(f"<@{user_id}>\n   - (กลับโดย: {officer}{late_str})\n   - [Cooldown ถึง: {master_cooldown.strftime('%d/%m/%Y')}]")
+                    st_d = today
+                    en_d = today
 
-        COLOR_DUE = 0x992D22
-        COLOR_UPCOMING = 0xCC8400
-        COLOR_ON_LEAVE = 0x1F8B4C
-        COLOR_HISTORY = 0x546E7A
+                if st_d <= today <= en_d:
+                    today_count += 1
+                    rem = (en_d - today).days
+                    on_leave_list.append(f"• <@{uid}> — สิ้นสุด `{en_d.strftime('%d/%m/%Y')}` (เหลือ {max(0, rem)} วัน)")
+                elif st_d > today:
+                    queued_list.append(f"• <@{uid}> — ลา {dur} วัน (`{st_d.strftime('%d/%m/%Y')}` — `{en_d.strftime('%d/%m/%Y')}`)")
 
-        dynamic_color = COLOR_HISTORY
-        if expired_list:
-            dynamic_color = COLOR_DUE
-        elif queued_list:
-            dynamic_color = COLOR_UPCOMING
-        elif on_leave_list:
-            dynamic_color = COLOR_ON_LEAVE
+        c_slate = discord.Color.from_rgb(47, 49, 54)
+        embed = discord.Embed(
+            title="WHAT UNIVERSAL — LEAVE BOARD",
+            description="-# รายงานสถานะวันลาและตรวจสอบโควตาประจำวัน",
+            color=c_slate
+        )
+        rem_slots = max(0, max_quota - today_count)
+        embed.add_field(
+            name="โควตาวันนี้",
+            value=f"ใช้ไป `{today_count} / {max_quota}` คน (ว่างอีก `{rem_slots}` ที่)",
+            inline=False
+        )
+        embed.add_field(
+            name="คนที่กำลังลาอยู่",
+            value="\n".join(on_leave_list[:20]) if on_leave_list else "*(ไม่พบผู้ที่กำลังลา)*",
+            inline=False
+        )
+        embed.add_field(
+            name="คนที่ลาล่วงหน้า",
+            value="\n".join(queued_list[:20]) if queued_list else "*(ไม่พบคิวล่วงหน้า)*",
+            inline=False
+        )
+        embed.set_footer(text="ตัดรอบวันลาทุก 03:00 น. • What Universal Leave System")
 
-        embed = discord.Embed(title="🌴 สถานะการลางาน (Leave Board)", color=dynamic_color)
-        embed.add_field(name="🟢 กำลังลา (On Leave)", value=_build_truncated_field(on_leave_list, "*(ไม่พบผู้ที่กำลังลา)*"), inline=False)
-        embed.add_field(name="⏳ รอคิว (Upcoming)", value=_build_truncated_field(queued_list, "*(ไม่พบคิวล่วงหน้า)*"), inline=False)
-        embed.add_field(name="🔴 ครบกำหนด (Due)", value=_build_truncated_field(expired_list, "*(ไม่พบผู้ที่ครบกำหนด)*"), inline=False)
-        embed.add_field(name="🕑 ประวัติ (ยังติด Cooldown)", value=_build_truncated_field(history_list, "*(ไม่มีประวัติในช่วงนี้)*"), inline=False)
-        embed.set_footer(text=f"อัปเดตเมื่อ: {datetime.now(config.timezone).strftime('%d/%m/%Y %H:%M:%S')}")
-
+        view = CleanLeaveBoardView(self)
         try:
             if message:
-                await message.edit(content="", embed=embed)
+                await message.edit(content="", embed=embed, view=view)
             else:
-                new_msg = await channel.send(embed=embed)
+                new_msg = await channel.send(embed=embed, view=view)
                 all_data["leave_board_message_id"] = new_msg.id
                 await write_leave_db(all_data)
         except Exception as e:
             print(f"[BreaktimeCog] Error updating leave board: {e}")
 
     async def ensure_panel_message(self):
-        """ตรวจสอบและสร้างปุ่มกดขอลางาน"""
-        all_data = await read_leave_db()
-        panel_message_id = all_data.get("leave_panel_message_id")
-        panel_channel_id = config.get("LEAVE_PANEL_CHANNEL_ID")
-        if not panel_channel_id:
-            return
-
-        channel = self.bot.get_channel(int(panel_channel_id))
-        if not channel:
-            return
-
-        if panel_message_id:
-            try:
-                await channel.fetch_message(int(panel_message_id))
-                return
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-        try:
-            msg = await channel.send("**แผงควบคุมการลางาน (Leave Panel)**", view=LeaveTypeView(self))
-            all_data["leave_panel_message_id"] = msg.id
-            await write_leave_db(all_data)
-        except Exception as e:
-            print(f"[BreaktimeCog] Error ensuring leave panel: {e}")
+        """อัปเดตหรือซ่อมแซมกระดาน Leave Board แบบรวมข้อความเดียว"""
+        await self.update_leave_board()
 
     @tasks.loop(minutes=30)
     async def check_expired_leaves_loop(self):
@@ -363,13 +357,12 @@ class BreaktimeCog(commands.Cog):
                         user = await self.bot.fetch_user(int(u["user_id"]))
                         if user:
                             dm_embed = discord.Embed(
-                                title="⚠️ แจ้งเตือน: ครบกำหนดการลางานแล้ว",
+                                title="NOTICE: LEAVE PERIOD CONCLUDED",
                                 description=(
-                                    f"การลาของคุณสิ้นสุดลงเมื่อวันที่ **{u['end_date']}**\n"
-                                    f"กรุณากดปุ่ม **'กลับเข้าเวร'** ที่ช่องแผงลางานโดยด่วน\n"
-                                    f"หากมีข้อสงสัยโปรดติดต่อ <@{contact_admin_id}>"
+                                    f"การลาของคุณสิ้นสุดลงเมื่อวันที่ **{u['end_date']}**\n\n"
+                                    f"-# หากมีข้อสงสัยโปรดติดต่อ <@{contact_admin_id}>"
                                 ),
-                                color=discord.Color.red()
+                                color=discord.Color.from_rgb(245, 158, 11)
                             )
                             await user.send(embed=dm_embed)
                     except Exception as e:
@@ -398,7 +391,7 @@ class BreaktimeCog(commands.Cog):
     # --- Slash Commands ---
     @app_commands.command(name="leave", description="เริ่มต้นกระบวนการขอลางาน")
     async def leave_command(self, interaction: discord.Interaction):
-        await interaction.response.send_message("กรุณาเลือกประเภทการลาที่ต้องการจากปุ่มด้านล่าง:", view=LeaveTypeView(self), ephemeral=True)
+        await interaction.response.send_modal(CleanLeaveRequestModal(self))
 
     @app_commands.command(name="cancel_leave", description="ยกเลิกการลาของตนเอง หรือ [Admin] ยกเลิกการลาของใครก็ได้")
     @app_commands.describe(member="แท็กผู้ที่ต้องการยกเลิกการลา (เฉพาะ Admin)")
@@ -492,4 +485,5 @@ class BreaktimeCog(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = BreaktimeCog(bot)
     await bot.add_cog(cog)
+    bot.add_view(CleanLeaveBoardView(cog))
     bot.add_view(LeaveTypeView(cog))
