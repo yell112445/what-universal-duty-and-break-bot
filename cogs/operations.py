@@ -382,52 +382,64 @@ class OperationsCog(commands.Cog):
     ):
         """ส่ง Personal Log ไปยังห้อง OPERATION_PERSONAL_LOG_CHANNELS หรือ fallback ไปห้อง OPERATION_LOG_CHANNEL_ID"""
         try:
-            ch_target = config.get("OPERATION_PERSONAL_LOG_CHANNELS") or config.get("OPERATION_LOG_CHANNEL_ID")
-            ch = await self.get_channel(ch_target)
-            if not ch:
-                logger.warning(f"ไม่พบห้อง Personal Log (เป้าหมาย: {ch_target})")
-                return
-
             c_blurple = discord.Color.from_rgb(88, 101, 242)
             c_slate = discord.Color.from_rgb(47, 49, 54)
             c_amber = discord.Color.from_rgb(245, 158, 11)
 
-            color = c_blurple
-            source_tag = "Check-in"
+            now_ts = int(datetime.now().timestamp())
 
-            if source == "user_checkout":
+            if source == "user_checkin":
+                embed = discord.Embed(
+                    title="TIME LOG — CHECK-IN RECEIPT",
+                    description=(
+                        f"**User:** {player_name} (<@{user_id}>)\n"
+                        f"• Timestamp: <t:{now_ts}:F>\n"
+                        f"• Status: `Online` (เริ่มบันทึกเวลา)\n\n"
+                        f"-# บันทึกข้อมูลลงประวัติส่วนบุคคลเรียบร้อยแล้ว"
+                    ),
+                    color=c_blurple
+                )
+            else:
                 source_tag = "Check-out"
-                color = c_slate
-            elif source == "user_checkin":
-                source_tag = "Check-in"
-                color = c_blurple
-            elif source.startswith("force_stop_by:"):
-                admin_id = source.split(":")[1]
-                source_tag = f"Force Stop by <@{admin_id}>"
-                color = c_amber
-            elif source == "auto_stop":
-                source_tag = "Auto Stop (Time Reached)"
-                color = c_amber
-            elif source == "assistant_stop":
-                source_tag = "Session Closed"
-                color = c_slate
+                if source.startswith("force_stop_by:"):
+                    admin_id = source.split(":")[1]
+                    source_tag = f"Force Stop by <@{admin_id}>"
+                elif source == "auto_stop":
+                    source_tag = "Auto Stop (Time Reached)"
 
-            embed = discord.Embed(
-                title="TIME TRACKER — RECEIPT",
-                color=color,
-                timestamp=datetime.now(config.timezone)
-            )
-            embed.description = (
-                f"**ผู้ใช้งาน:** {player_name} (<@{user_id}>)\n"
-                f"• สถานะ: `[{source_tag}]`\n"
-                f"• เริ่มต้น: `{start_time}`\n"
-                f"• สิ้นสุด: `{end_time}`\n"
-                f"• รวมเวลา: `{format_duration(duration) if duration > 0 else '-'}`\n\n"
-                f"-# บันทึกข้อมูลเข้าสู่ระบบเรียบร้อยแล้ว"
-            )
-            embed.set_footer(text="What Universal Time Tracker")
+                embed = discord.Embed(
+                    title="TIME LOG — CHECK-OUT RECEIPT",
+                    description=(
+                        f"**User:** {player_name} (<@{user_id}>)\n"
+                        f"• Check-in: `{start_time}`\n"
+                        f"• Check-out: `{end_time}`\n"
+                        f"• Duration: `{format_duration(duration) if duration > 0 else '-'}`\n\n"
+                        f"-# สรุปยอดเวลาทำงานประจำรอบเรียบร้อยแล้ว"
+                    ),
+                    color=c_blurple
+                )
 
-            await ch.send(embed=embed)
+            # 1. ส่ง Personal Log ให้ผู้ใช้
+            ch_target = config.get("OPERATION_PERSONAL_LOG_CHANNELS") or config.get("OPERATION_LOG_CHANNEL_ID")
+            ch = await self.get_channel(ch_target)
+            if ch:
+                await ch.send(embed=embed)
+
+            # 2. ถ้าเป็น Check-out / Force Stop ให้ส่งเข้า Central Audit Log (ห้อง #operation-log)
+            if source != "user_checkin":
+                audit_ch_id = config.get("OPERATION_LOG_CHANNEL_ID")
+                if audit_ch_id and str(audit_ch_id) != str(ch_target):
+                    audit_ch = await self.get_channel(audit_ch_id)
+                    if audit_ch:
+                        audit_log = discord.Embed(
+                            title="AUDIT LOG — USER SESSION ENDED",
+                            color=c_slate,
+                            timestamp=datetime.now(config.timezone)
+                        )
+                        audit_log.add_field(name="User", value=f"{player_name} (<@{user_id}>)", inline=True)
+                        audit_log.add_field(name="Duration", value=f"`{format_duration(duration) if duration > 0 else '-'}`", inline=True)
+                        audit_log.set_footer(text="What Universal Core Audit")
+                        await audit_ch.send(embed=audit_log)
         except Exception as e:
             logger.error(f"เกิดข้อผิดพลาดในการส่ง Personal Log: {e}")
 
@@ -485,18 +497,13 @@ class OperationsCog(commands.Cog):
                     ch = await self.get_channel(otp_ch_id)
                     if ch:
                         embed = discord.Embed(
-                            title="OTP PASSCODE — TIME TRACKER",
-                            description=(
-                                f"รหัสสำหรับใช้ Check-in ประจำรอบนี้:\n\n"
-                                f"# `{new_otp}`\n\n"
-                                f"• เปลี่ยนรหัสทุก: `{otp_min} นาที`\n"
-                                f"• หมดอายุใน: <t:{int(new_exp.timestamp())}:R>\n\n"
-                                f"-# กรุณานำรหัส 4 หลักไปกรอกในปุ่ม Check-in เพื่อเริ่มบันทึกเวลา"
-                            ),
-                            color=discord.Color.from_rgb(88, 101, 242),
-                            timestamp=now_dt
+                            title="SECURITY PASSCODE (OTP)",
+                            description=f"```\n{new_otp}\n```\n-# รหัส 4 หลักสำหรับ Check-in เริ่มต้นทำงาน",
+                            color=discord.Color.from_rgb(88, 101, 242)
                         )
-                        embed.set_footer(text="What Universal OTP Service")
+                        embed.add_field(name="Status", value="`Ready` (พร้อมใช้งาน)", inline=True)
+                        embed.add_field(name="Auto-Refresh", value=f"<t:{int(new_exp.timestamp())}:R>", inline=True)
+                        embed.set_footer(text="What Universal • OTP Security")
 
                         old_msg_id = op_status.get("otp_message_id")
                         sent_new = False
@@ -576,21 +583,57 @@ class OperationsCog(commands.Cog):
                     time_display = f"<t:{int(st_dt.timestamp())}:R>" if st_dt else f"`{duration_str}`"
                     unit_groups[matched_unit].append(f"• {nickname} (<@{k}>) — {time_display}")
 
+            # คำนวณเวลาตัดรอบ
+            auto_stop_str = op_status.get("stop_time")
+            auto_stop_ts = None
+            if auto_stop_str:
+                try:
+                    sh, sm = map(int, auto_stop_str.split(":"))
+                    stop_dt = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                    if stop_dt < now_dt:
+                        stop_dt += timedelta(days=1)
+                    auto_stop_ts = int(stop_dt.timestamp())
+                except Exception:
+                    pass
+            elif config.get("AUTO_STOP_TIMES"):
+                cand = []
+                for t in config.get("AUTO_STOP_TIMES", []):
+                    try:
+                        th, tm = map(int, t.strip().split(":"))
+                        tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
+                        if tdt < now_dt:
+                            tdt += timedelta(days=1)
+                        cand.append(tdt)
+                    except Exception:
+                        pass
+                if cand:
+                    cand.sort()
+                    auto_stop_ts = int(cand[0].timestamp())
+
+            auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ตามกำหนดการ"
+            otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
+            otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
+
             embed = discord.Embed(
                 title="WHAT UNIVERSAL — TIME TRACKER",
-                description=(
-                    f"-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์\n\n"
-                    f"**สถานะ:** `Active` • กำลังทำงานอยู่ **{active_count}** คน"
-                ),
+                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
                 color=discord.Color.from_rgb(88, 101, 242) if active_count > 0 else discord.Color.from_rgb(47, 49, 54),
                 timestamp=now_dt
             )
+            embed.add_field(name="สถานะระบบ", value="`Active` (เปิดรับลงเวลา)", inline=True)
+            embed.add_field(name="ตัดรอบอัตโนมัติ", value=auto_stop_val, inline=True)
+            embed.add_field(name="รหัส OTP", value=otp_val, inline=False)
 
+            has_members = False
             for unit_name, members in unit_groups.items():
                 if members:
-                    embed.add_field(name=f"{unit_name} ({len(members)})", value="\n".join(members[:20]), inline=False)
+                    has_members = True
+                    embed.add_field(name=f"{unit_name} [{len(members)}]", value="\n".join(members[:20]), inline=False)
 
-            embed.set_footer(text=f"อัปเดตอัตโนมัติทุก 15 วินาที • {config.get('BOT_VERSION')}")
+            if not has_members:
+                embed.add_field(name="รายชื่อคนที่ Check-in อยู่", value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
+
+            embed.set_footer(text="What Universal • อัปเดตข้อมูลอัตโนมัติ")
             await msg.edit(embed=embed)
         except Exception as e:
             logger.error(f"[OperationsCog] refresh_status_message_loop error: {e}")
@@ -627,17 +670,18 @@ class OperationsCog(commands.Cog):
                     if status_ch_id:
                         ch = await self.get_channel(status_ch_id)
                         if ch:
+                            stop_target_dt = now_local + timedelta(minutes=announce_min)
+                            stop_ts = int(stop_target_dt.timestamp())
                             embed = discord.Embed(
-                                title="NOTICE: SESSION ENDING SOON",
+                                title="AUTO-STOP ANNOUNCEMENT",
                                 description=(
-                                    f"ระบบจะปิดรอบบันทึกเวลาอัตโนมัติในอีก **{announce_min} นาที**\n"
-                                    f"• เวลาปิดรอบ: `{future_time_str}` น.\n\n"
-                                    f"-# กรุณากด Check-out หรือเตรียมความพร้อมก่อนหมดเวลาครับ"
+                                    f"ระบบจะทำการตัดรอบเวลาทำงานอัตโนมัติในอีก **{announce_min} นาที**\n"
+                                    f"• เวลาตัดรอบ: <t:{stop_ts}:t> (<t:{stop_ts}:R>)\n\n"
+                                    f"-# กรุณาเคลียร์งานที่ค้างอยู่ให้เรียบร้อยก่อนระบบตัดรอบ"
                                 ),
-                                color=discord.Color.from_rgb(245, 158, 11),
-                                timestamp=now_local
+                                color=discord.Color.from_rgb(237, 66, 69)
                             )
-                            embed.set_footer(text="What Universal Auto-Stop Warning")
+                            embed.set_footer(text="What Universal • Auto Termination Service")
                             await ch.send(embed=embed)
         except Exception as e:
             logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}")
@@ -767,20 +811,21 @@ class OperationsCog(commands.Cog):
             return await interaction.followup.send("⚠️ มีรอบการทำงานเปิดอยู่แล้ว", ephemeral=True)
 
         now_dt = datetime.now(config.timezone)
+        auto_stop_val = f"`{stop_time}` น." if stop_time else "ตามกำหนดการ"
+        otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
+        otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
+
         embed = discord.Embed(
             title="WHAT UNIVERSAL — TIME TRACKER",
-            description=(
-                f"-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์\n\n"
-                f"**สถานะ:** `Active` (เปิดรับลงเวลา)\n"
-                f"• เริ่มรอบเมื่อ: <t:{int(now_dt.timestamp())}:T>\n"
-                f"• รหัส OTP: ดูได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>\n"
-            ),
+            description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
             color=discord.Color.from_rgb(88, 101, 242),
             timestamp=now_dt
         )
-        if stop_time:
-            embed.description += f"• กำหนดเวลาปิดรอบ: `{stop_time}` น.\n"
-        embed.set_footer(text="What Universal Time Tracker")
+        embed.add_field(name="สถานะระบบ", value="`Active` (เปิดรับลงเวลา)", inline=True)
+        embed.add_field(name="ตัดรอบอัตโนมัติ", value=auto_stop_val, inline=True)
+        embed.add_field(name="รหัส OTP", value=otp_val, inline=False)
+        embed.add_field(name="รายชื่อคนที่ Check-in อยู่", value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
+        embed.set_footer(text="What Universal • อัปเดตข้อมูลอัตโนมัติ")
 
         status_msg = await interaction.channel.send(embed=embed)
 
@@ -798,6 +843,7 @@ class OperationsCog(commands.Cog):
 
         op_status = {
             "start_time": now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            "stop_time": stop_time,
             "status_message_id": status_msg.id,
             "status_channel_id": interaction.channel.id,
             "button_messages": [{"channel_id": sent_btn_msg.channel.id, "message_id": sent_btn_msg.id}],

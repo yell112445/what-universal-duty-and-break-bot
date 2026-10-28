@@ -47,47 +47,41 @@ async def delete_message_after_delay(message: discord.Message, delay: int = 3600
 
 WELCOME_BANNER_GIF = "https://media.discordapp.net/attachments/752095905074642945/1341411365839175710/Final.gif?ex=67b5e62f&is=67b494af&hm=79d36fd5a51ec8e8f09ff36628b92d56682a6e359816404b5dd57591530b400f&=&width=578&height=578"
 
-def build_ticket_embed(ticket: dict, user_mention: str) -> discord.Embed:
-    role = ticket.get("selected_role") or "ยังไม่ได้เลือก"
-    fname = ticket.get("first_name") or "-"
-    lname = ticket.get("last_name") or "-"
-    phone = ticket.get("phone_number") or "-"
-    is_medic = (ticket.get("selected_role") == "หมอ")
+def build_ticket_embed(ticket: dict, channel_name: str = "") -> discord.Embed:
+    role = ticket.get("selected_role")
+    fname = ticket.get("first_name")
+    lname = ticket.get("last_name")
+    phone = ticket.get("phone_number")
+    is_medic = (role == "หมอ")
     has_photo = ticket.get("form_image_uploaded", False)
 
+    c_ice = discord.Color.from_rgb(56, 182, 255)
+    title_suffix = f" #{channel_name}" if channel_name else ""
     embed = discord.Embed(
-        title="TICKET REGISTRATION",
-        description=(
-            f"ยินดีต้อนรับ {user_mention} สู่ระบบลงทะเบียน\n"
-            f"กรุณากรอกข้อมูลและเลือกหน่วยงานด้านล่างให้ครบถ้วน\n\n"
-            f"-# ข้อมูลจะอัปเดตบนการ์ดใบนี้แบบเรียลไทม์"
-        ),
-        color=discord.Color.from_rgb(88, 101, 242)
+        title=f"Registration Ticket{title_suffix}",
+        description="-# กรุณากรอกข้อมูลให้ครบเพื่อรับ Role",
+        color=c_ice
     )
-    embed.add_field(
-        name="1. หน่วยงาน (Department)",
-        value=f"`{role}`",
-        inline=False
-    )
-    embed.add_field(
-        name="2. ข้อมูลตัวละคร (IC Info)",
-        value=(
-            f"• First Name: `{fname}`\n"
-            f"• Last Name: `{lname}`\n"
-            f"• In-game Phone: `{phone}`"
-        ),
-        inline=False
-    )
-    if is_medic:
-        photo_val = "`ยกเว้นไม่ต้องส่ง (หมอ)`"
-    elif has_photo:
-        photo_val = "`แนบภาพแบบฟอร์มเรียบร้อยแล้ว`"
-    else:
-        photo_val = "`ยังไม่ได้แนบภาพ (ส่งภาพลงในห้องนี้)`"
 
-    embed.add_field(name="3. Story / Photo", value=photo_val, inline=False)
+    role_text = f"`{role}` (Selected)" if role else "`None`"
+    embed.add_field(name="1. Department", value=role_text, inline=False)
+
+    if fname and lname:
+        info_text = f"`{fname} {lname}` • Phone: `{phone or '-'}`"
+    else:
+        info_text = "`Pending` (กดปุ่ม Fill Info ด้านล่าง)"
+    embed.add_field(name="2. Character Info (IC)", value=info_text, inline=False)
+
+    if is_medic:
+        photo_text = "`ไม่ต้องส่งรูป` (ยกเว้นสำหรับหมอ)"
+    elif has_photo:
+        photo_text = "`Attached` (แนบรูปแล้ว)"
+    else:
+        photo_text = "`Pending` (แนบรูปส่งในห้องนี้ได้เลย)"
+    embed.add_field(name="3. Story / Photo", value=photo_text, inline=False)
+
+    embed.set_footer(text="ระบบจะปลดล็อคปุ่ม Submit อัตโนมัติเมื่อข้อมูลครบ")
     embed.set_thumbnail(url=WELCOME_BANNER_GIF)
-    embed.set_footer(text="What Universal Verification System")
     return embed
 
 async def update_ticket_display(channel: discord.TextChannel, ticket_id: str):
@@ -96,20 +90,29 @@ async def update_ticket_display(channel: discord.TextChannel, ticket_id: str):
     if not ticket:
         return
 
-    user_mention = f"<@{ticket.get('user_id')}>"
-    embed = build_ticket_embed(ticket, user_mention)
+    fname = ticket.get("first_name")
+    lname = ticket.get("last_name")
+    phone = ticket.get("phone_number")
+    role = ticket.get("selected_role")
+    is_medic = (role == "หมอ")
+    has_photo = ticket.get("form_image_uploaded", False)
+
+    is_ready = bool(fname and lname and phone and role and (is_medic or has_photo))
+
+    embed = build_ticket_embed(ticket, channel.name)
+    view = WelcomeTicketActiveView(is_ready=is_ready)
     msg_id = ticket.get("display_message_id") or ticket.get("preview_message_id")
 
     if msg_id:
         try:
             msg = await channel.fetch_message(int(msg_id))
-            await msg.edit(embed=embed)
+            await msg.edit(embed=embed, view=view)
             return
         except Exception:
             pass
 
     try:
-        new_msg = await channel.send(embed=embed)
+        new_msg = await channel.send(embed=embed, view=view)
         ticket["display_message_id"] = new_msg.id
         await save_welcome_tickets(data)
     except Exception as e:
@@ -220,13 +223,28 @@ class CloseTicketConfirmView(View):
         await update_ticket_display(interaction.channel, ticket_id)
 
 class WelcomeTicketActiveView(View):
-    def __init__(self):
+    def __init__(self, is_ready: bool = False):
         super().__init__(timeout=None)
+        self.is_ready = is_ready
         self.add_item(RoleSelect())
 
-    # ปุ่ม 1: เทา (Secondary) - กรอกข้อมูล (แถว 1)
-    @discord.ui.button(label="กรอกข้อมูล", style=discord.ButtonStyle.secondary, custom_id="enter_combined_info", row=1)
-    async def info_button(self, interaction: discord.Interaction, button: Button):
+        # Button 1: Fill Info
+        self.btn_info = Button(label="Fill Info", style=discord.ButtonStyle.secondary, custom_id="enter_combined_info", row=1)
+        self.btn_info.callback = self.info_callback
+        self.add_item(self.btn_info)
+
+        # Button 2: Submit / Pending Info
+        submit_label = "Submit" if is_ready else "Pending Info"
+        self.btn_submit = Button(label=submit_label, style=discord.ButtonStyle.primary, disabled=not is_ready, custom_id="confirm_welcome", row=1)
+        self.btn_submit.callback = self.confirm_callback
+        self.add_item(self.btn_submit)
+
+        # Button 3: Close Ticket
+        self.btn_close = Button(label="Close Ticket", style=discord.ButtonStyle.secondary, custom_id="close_ticket", row=1)
+        self.btn_close.callback = self.close_callback
+        self.add_item(self.btn_close)
+
+    async def info_callback(self, interaction: discord.Interaction):
         ticket_id = str(interaction.channel.id)
         data = await load_welcome_tickets()
         ticket = data.get("tickets", {}).get(ticket_id, {})
@@ -235,9 +253,7 @@ class WelcomeTicketActiveView(View):
         phone = ticket.get("phone_number", "")
         await interaction.response.send_modal(CleanCombinedInfoModal(fname, lname, phone))
 
-    # ปุ่ม 2: ฟ้า (Primary) - ยื่นเรื่อง (แถว 1)
-    @discord.ui.button(label="ยื่นเรื่อง", style=discord.ButtonStyle.primary, custom_id="confirm_welcome", row=1)
-    async def confirm_button(self, interaction: discord.Interaction, button: Button):
+    async def confirm_callback(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         ticket_id = str(interaction.channel.id)
         data = await load_welcome_tickets()
@@ -364,30 +380,13 @@ class WelcomeTicketActiveView(View):
         await interaction.followup.send(res_msg, ephemeral=True)
         asyncio.create_task(delete_channel_after_delay(interaction.channel, delay=10))
 
-    # ปุ่ม 3: เทา (Secondary) - ปิด Ticket (แถว 1)
-    @discord.ui.button(label="ปิด Ticket", style=discord.ButtonStyle.secondary, custom_id="close_ticket", row=1)
-    async def close_button(self, interaction: discord.Interaction, button: Button):
+    async def close_callback(self, interaction: discord.Interaction):
         confirm_embed = discord.Embed(
             title="Confirm Close Ticket",
             description="คุณต้องการปิด Ticket นี้ใช่หรือไม่?\nห้องนี้และข้อมูลจะถูกลบออกถาวร",
             color=discord.Color.from_rgb(237, 66, 69)
         )
         await interaction.response.send_message(embed=confirm_embed, view=CloseTicketConfirmView(), ephemeral=True)
-
-    # Handlers สำรองสำหรับปุ่มเดิม
-    @discord.ui.button(label="✏️ กรอกชื่อ", custom_id="enter_full_name", row=2)
-    async def legacy_name_button(self, interaction: discord.Interaction, button: Button):
-        ticket_id = str(interaction.channel.id)
-        data = await load_welcome_tickets()
-        ticket = data.get("tickets", {}).get(ticket_id, {})
-        await interaction.response.send_modal(CleanCombinedInfoModal(ticket.get("first_name", ""), ticket.get("last_name", ""), ticket.get("phone_number", "")))
-
-    @discord.ui.button(label="📞 กรอกเบอร์", custom_id="enter_phone", row=2)
-    async def legacy_phone_button(self, interaction: discord.Interaction, button: Button):
-        ticket_id = str(interaction.channel.id)
-        data = await load_welcome_tickets()
-        ticket = data.get("tickets", {}).get(ticket_id, {})
-        await interaction.response.send_modal(CleanCombinedInfoModal(ticket.get("first_name", ""), ticket.get("last_name", ""), ticket.get("phone_number", "")))
 
 class WelcomeTicketPanelControlView(View):
     def __init__(self):
@@ -458,11 +457,10 @@ class WelcomeTicketPanelControlView(View):
         }
         data["tickets"][str(ticket_ch.id)] = ticket_record
 
-        # ส่งข้อความและ Interactive Card ลงในห้อง Ticket
-        active_view = WelcomeTicketActiveView()
-        init_embed = build_ticket_embed(ticket_record, user.mention)
+        # ส่ง Interactive Card ลงในห้อง Ticket
+        active_view = WelcomeTicketActiveView(is_ready=False)
+        init_embed = build_ticket_embed(ticket_record, ticket_ch.name)
         display_msg = await ticket_ch.send(
-            content=f"ยินดีต้อนรับ {user.mention} กรุณาดำเนินการตามขั้นตอนด้านล่าง:",
             embed=init_embed,
             view=active_view
         )
@@ -470,26 +468,6 @@ class WelcomeTicketPanelControlView(View):
         await save_welcome_tickets(data)
 
         await interaction.followup.send(f"✅ เปิดห้อง Ticket สำเร็จแล้วที่: {ticket_ch.mention}", ephemeral=True)
-
-    @discord.ui.button(label="เปิดระบบ", style=discord.ButtonStyle.secondary, custom_id="enable_system")
-    async def enable_system_button(self, interaction: discord.Interaction, button: Button):
-        if not self.is_ticket_admin(interaction.user):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์จัดการระบบ Ticket", ephemeral=True)
-
-        data = await load_welcome_tickets()
-        data["_system"]["enabled"] = True
-        await save_welcome_tickets(data)
-        await interaction.response.send_message("✅ เปิดใช้งานระบบ Welcome Ticket เรียบร้อยแล้ว", ephemeral=True)
-
-    @discord.ui.button(label="ปิดระบบ", style=discord.ButtonStyle.secondary, custom_id="disable_system")
-    async def disable_system_button(self, interaction: discord.Interaction, button: Button):
-        if not self.is_ticket_admin(interaction.user):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์จัดการระบบ Ticket", ephemeral=True)
-
-        data = await load_welcome_tickets()
-        data["_system"]["enabled"] = False
-        await save_welcome_tickets(data)
-        await interaction.response.send_message("🛑 ปิดใช้งานระบบ Welcome Ticket ชั่วคราวเรียบร้อยแล้ว", ephemeral=True)
 
 # ====================================================
 # Introduction Cog
@@ -604,6 +582,30 @@ class IntroductionCog(commands.Cog):
             except Exception as e:
                 logger.error(f"[Introduction] Failed to send leave log: {e}")
 
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        if interaction.type == discord.InteractionType.component:
+            cid = interaction.data.get("custom_id")
+            if cid in ["enter_full_name", "enter_phone"]:
+                ticket_id = str(interaction.channel.id)
+                data = await load_welcome_tickets()
+                ticket = data.get("tickets", {}).get(ticket_id, {})
+                await interaction.response.send_modal(CleanCombinedInfoModal(ticket.get("first_name", ""), ticket.get("last_name", ""), ticket.get("phone_number", "")))
+            elif cid == "enable_system":
+                if not config.is_owner(interaction.user.id):
+                    return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์จัดการระบบ Ticket", ephemeral=True)
+                data = await load_welcome_tickets()
+                data.setdefault("_system", {})["enabled"] = True
+                await save_welcome_tickets(data)
+                await interaction.response.send_message("✅ เปิดใช้งานระบบ Welcome Ticket เรียบร้อยแล้ว", ephemeral=True)
+            elif cid == "disable_system":
+                if not config.is_owner(interaction.user.id):
+                    return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์จัดการระบบ Ticket", ephemeral=True)
+                data = await load_welcome_tickets()
+                data.setdefault("_system", {})["enabled"] = False
+                await save_welcome_tickets(data)
+                await interaction.response.send_message("🛑 ปิดใช้งานระบบ Welcome Ticket ชั่วคราวเรียบร้อยแล้ว", ephemeral=True)
+
     # --- Slash Commands ---
     @app_commands.command(name="welcome_setup", description="[Owner] ส่งแผงควบคุม Welcome Ticket ลงในห้องที่กำหนด")
     async def welcome_setup(self, interaction: discord.Interaction):
@@ -616,20 +618,17 @@ class IntroductionCog(commands.Cog):
         if not channel or not isinstance(channel, discord.TextChannel):
             return await interaction.followup.send(f"❌ ไม่พบ Text Channel ของ Welcome Ticket (ID: {ch_id})", ephemeral=True)
 
-        data = await load_welcome_tickets()
-        is_enabled = data.get("_system", {}).get("enabled", True)
-
         embed = discord.Embed(
-            title="WHAT UNIVERSAL — WELCOME & ONBOARDING",
+            title="WHAT UNIVERSAL — REGISTRATION",
             description=(
-                f"ยินดีต้อนรับสู่เซิร์ฟเวอร์ **What Universal**\n\n"
-                f"กดปุ่ม **'Open Ticket'** ด้านล่างเพื่อเริ่มกระบวนการลงทะเบียน กรอกข้อมูลตัวละคร (IC) และรับยศเข้าหน่วยงาน\n\n"
-                f"-# สถานะระบบ: {'เปิดให้บริการ' if is_enabled else 'ปิดให้บริการชั่วคราว'}"
+                "-# ระบบลงทะเบียนและยืนยันตัวตนสมาชิกใหม่\n\n"
+                "ยินดีต้อนรับสู่ What Universal\n"
+                "กดปุ่ม **Open Ticket** ด้านล่างเพื่อเริ่มลงทะเบียน"
             ),
-            color=discord.Color.from_rgb(88, 101, 242)
+            color=discord.Color.from_rgb(47, 49, 54)
         )
+        embed.set_footer(text="Automated Registration • 24/7")
         embed.set_image(url=WELCOME_BANNER_GIF)
-        embed.set_footer(text="What Universal Verification System")
 
         view = WelcomeTicketPanelControlView()
         await channel.send(embed=embed, view=view)

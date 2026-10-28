@@ -164,6 +164,26 @@ class CleanLeaveRequestModal(Modal):
         start_ts = int(datetime.combine(req_start_date, datetime.min.time(), tzinfo=config.timezone).timestamp())
         end_ts = int(datetime.combine(req_end_date, datetime.min.time(), tzinfo=config.timezone).timestamp())
 
+        # ส่ง Audit Log เข้าห้อง LOG_CHANNEL_ID
+        log_ch_id = config.get("LOG_CHANNEL_ID")
+        if log_ch_id:
+            log_ch = interaction.client.get_channel(int(log_ch_id))
+            if log_ch:
+                leave_audit = discord.Embed(
+                    title="AUDIT LOG — LEAVE REQUEST FILED",
+                    color=discord.Color.from_rgb(47, 49, 54),
+                    timestamp=now_dt
+                )
+                leave_audit.add_field(name="User", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=True)
+                leave_audit.add_field(name="Duration", value=f"`{days} วัน`", inline=True)
+                leave_audit.add_field(name="Period", value=f"<t:{start_ts}:D> — <t:{end_ts}:D>", inline=False)
+                leave_audit.add_field(name="Reason", value=f"`{reason}`", inline=False)
+                leave_audit.set_footer(text="Leave Registry Audit")
+                try:
+                    await log_ch.send(embed=leave_audit)
+                except Exception:
+                    pass
+
         await interaction.followup.send(
             f"**ยื่นคำขอลางานเรียบร้อยแล้ว**\n"
             f"• วันที่: <t:{start_ts}:D> — <t:{end_ts}:D> (`{days} วัน`)\n"
@@ -298,12 +318,18 @@ class BreaktimeCog(commands.Cog):
                     st_d = today
                     en_d = today
 
+                member = channel.guild.get_member(int(uid)) if channel.guild and str(uid).isdigit() else None
+                user_name = member.display_name if member else f"User {uid}"
+                name_display = f"{user_name} (<@{uid}>)"
+
+                en_ts = int(datetime.combine(en_d, datetime.min.time(), tzinfo=config.timezone).timestamp())
                 if st_d <= today <= en_d:
                     today_count += 1
                     rem = (en_d - today).days
-                    on_leave_list.append(f"• <@{uid}> — สิ้นสุด `{en_d.strftime('%d/%m/%Y')}` (เหลือ {max(0, rem)} วัน)")
+                    on_leave_list.append(f"• {name_display} — สิ้นสุด <t:{en_ts}:D> (เหลือ {max(0, rem)} วัน)")
                 elif st_d > today:
-                    queued_list.append(f"• <@{uid}> — ลา {dur} วัน (`{st_d.strftime('%d/%m/%Y')}` — `{en_d.strftime('%d/%m/%Y')}`)")
+                    st_ts = int(datetime.combine(st_d, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                    queued_list.append(f"• {name_display} — ลา {dur} วัน (<t:{st_ts}:D> — <t:{en_ts}:D>)")
 
         c_slate = discord.Color.from_rgb(47, 49, 54)
         embed = discord.Embed(
@@ -319,15 +345,15 @@ class BreaktimeCog(commands.Cog):
         )
         embed.add_field(
             name="คนที่กำลังลาอยู่",
-            value="\n".join(on_leave_list[:20]) if on_leave_list else "*(ไม่พบผู้ที่กำลังลา)*",
+            value="\n".join(on_leave_list[:20]) if on_leave_list else "*— ไม่มีรายชื่อในขณะนี้ —*",
             inline=False
         )
         embed.add_field(
             name="คนที่ลาล่วงหน้า",
-            value="\n".join(queued_list[:20]) if queued_list else "*(ไม่พบคิวล่วงหน้า)*",
+            value="\n".join(queued_list[:20]) if queued_list else "*— ไม่มีคิวล่วงหน้า —*",
             inline=False
         )
-        embed.set_footer(text="ตัดรอบวันลาทุก 03:00 น. • What Universal Leave System")
+        embed.set_footer(text="ตัดรอบวันลาทุก 03:00 น.")
 
         view = CleanLeaveBoardView(self)
         try:
