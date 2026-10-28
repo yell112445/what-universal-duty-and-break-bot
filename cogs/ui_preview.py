@@ -110,13 +110,12 @@ def build_roster_embeds(
 class CleanOTPModal(Modal):
     def __init__(self):
         super().__init__(title="ยืนยันรหัส OTP")
-        otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
         self.otp_input = TextInput(
-            label="รหัส OTP",
-            placeholder=f"ดูรหัส 4 หลักได้จากห้อง #{otp_ch_id}",
+            label="รหัส OTP 4 หลัก",
+            placeholder="กรอกรหัส 4 หลัก เช่น 1234",
             required=True,
             min_length=4,
-            max_length=6
+            max_length=4
         )
         self.add_item(self.otp_input)
 
@@ -413,7 +412,7 @@ class UIPreviewCog(commands.Cog):
                 section_name="รายชื่อคนที่ Check-in อยู่",
                 items_per_field=10,
                 footer_text="What Universal • อัปเดตข้อมูลอัตโนมัติ",
-                thumbnail_url=config.get("EMBED_THUMBNAIL_URL"),
+                thumbnail_url=None,
                 extra_fields=extra_fields
             )
 
@@ -437,8 +436,6 @@ class UIPreviewCog(commands.Cog):
                 color=c_slate
             )
             welcome_panel_embed.set_footer(text="ระบบลงทะเบียนอัตโนมัติ 24 ชม.")
-            if config.get("EMBED_THUMBNAIL_URL"):
-                welcome_panel_embed.set_thumbnail(url=config.get("EMBED_THUMBNAIL_URL"))
 
             btn_open_ticket = Button(
                 label="เปิดตั๋วลงทะเบียน",
@@ -557,7 +554,7 @@ class UIPreviewCog(commands.Cog):
                 section_name="รายชื่อคนที่ Check-in อยู่",
                 items_per_field=10,
                 footer_text="ทดสอบระบบแบ่ง Embed อัตโนมัติ",
-                thumbnail_url=config.get("EMBED_THUMBNAIL_URL"),
+                thumbnail_url=None,
                 extra_fields=split_extra
             )
 
