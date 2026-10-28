@@ -373,6 +373,24 @@ class ConfigCog(commands.Cog):
     async def set_config_key_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         return await self._key_autocomplete(interaction, current)
 
+    async def _safe_reload_or_load(self, cog_name: str) -> str:
+        """รีโหลดโมดูลอย่างปลอดภัย หรือโหลดเพิ่มทันทีหากเป็นโมดูลใหม่ที่เพิ่งถูกดึงเข้ามา"""
+        if cog_name == "cogs.breaktime" and cog_name not in self.bot.extensions:
+            return f"⏸️ `{cog_name}`: ปิดใช้งานชั่วคราว (รอคำสั่งเปิดใช้งาน)"
+
+        if cog_name in self.bot.extensions:
+            try:
+                await self.bot.reload_extension(cog_name)
+                return f"✅ `{cog_name}`: รีโหลดสำเร็จ"
+            except Exception as e:
+                return f"❌ `{cog_name}`: ล้มเหลว ({e})"
+        else:
+            try:
+                await self.bot.load_extension(cog_name)
+                return f"✅ `{cog_name}`: โหลดโมดูลใหม่เข้า Memory สำเร็จ"
+            except Exception as e:
+                return f"❌ `{cog_name}`: โหลดล้มเหลว ({e})"
+
     @app_commands.command(name="reload", description="[Admin] โหลดโมดูล Cog ใหม่ทันที (ไม่ต้องรีสตาร์ตบอท)")
     @app_commands.describe(cog_name="โมดูลที่ต้องการรีโหลด (ค่าเริ่มต้น: รีโหลดทั้งหมด)")
     @app_commands.choices(cog_name=[
@@ -396,13 +414,33 @@ class ConfigCog(commands.Cog):
 
         results = []
         for c in cogs_to_reload:
-            try:
-                await self.bot.reload_extension(c)
-                results.append(f"✅ `{c}`: รีโหลดสำเร็จ")
-            except Exception as e:
-                results.append(f"❌ `{c}`: ล้มเหลว ({e})")
+            res = await self._safe_reload_or_load(c)
+            results.append(res)
+
+        # Auto-sync commands
+        try:
+            guild_obj = discord.Object(id=config.guild_id)
+            self.bot.tree.copy_global_to(guild=guild_obj)
+            await self.bot.tree.sync(guild=guild_obj)
+            results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์สำเร็จ")
+        except Exception as se:
+            results.append(f"⚠️ `Slash Commands`: {se}")
 
         await interaction.followup.send("\n".join(results), ephemeral=True)
+
+    @app_commands.command(name="sync", description="[Admin] ซิงค์ Slash Commands ทั้งหมดเข้า Discord ทันที")
+    async def sync_commands(self, interaction: discord.Interaction):
+        if not self._check_admin(interaction):
+            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+        try:
+            guild_obj = discord.Object(id=config.guild_id)
+            self.bot.tree.copy_global_to(guild=guild_obj)
+            synced = await self.bot.tree.sync(guild=guild_obj)
+            await interaction.followup.send(f"✅ ซิงค์ Slash Commands สำเร็จทั้งหมด `{len(synced)}` คำสั่ง", ephemeral=True)
+        except Exception as e:
+            await interaction.followup.send(f"❌ ซิงค์คำสั่งล้มเหลว: {e}", ephemeral=True)
 
     @app_commands.command(name="git_pull", description="[Admin] ดึงโค้ดล่าสุดจาก GitHub และรีโหลดบอททันที")
     async def git_pull_command(self, interaction: discord.Interaction):
@@ -421,11 +459,17 @@ class ConfigCog(commands.Cog):
 
             reload_results = []
             for c in ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.ui_preview", "cogs.breaktime", "cogs.duty_check"]:
-                try:
-                    await self.bot.reload_extension(c)
-                    reload_results.append(f"✅ `{c}`: อัปเดตสำเร็จ")
-                except Exception as e:
-                    reload_results.append(f"❌ `{c}`: {e}")
+                res = await self._safe_reload_or_load(c)
+                reload_results.append(res)
+
+            # Auto-sync commands after pull
+            try:
+                guild_obj = discord.Object(id=config.guild_id)
+                self.bot.tree.copy_global_to(guild=guild_obj)
+                await self.bot.tree.sync(guild=guild_obj)
+                reload_results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์สำเร็จ")
+            except Exception as se:
+                reload_results.append(f"⚠️ `Slash Commands`: {se}")
 
             msg = f"**Git Pull Result:**\n```\n{out_str[:1200]}\n```\n" + "\n".join(reload_results)
             await interaction.followup.send(msg, ephemeral=True)
