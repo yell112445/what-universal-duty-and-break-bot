@@ -193,7 +193,7 @@ class RoleSelect(Select):
 
 class CloseTicketConfirmView(View):
     def __init__(self):
-        super().__init__(timeout=60)
+        super().__init__(timeout=None)
 
     @discord.ui.button(label="✅ ยืนยันปิด Ticket", style=discord.ButtonStyle.danger, custom_id="confirm_close_ticket")
     async def confirm_button(self, interaction: discord.Interaction, button: Button):
