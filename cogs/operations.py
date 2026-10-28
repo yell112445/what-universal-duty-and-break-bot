@@ -115,7 +115,7 @@ class OTPModal(Modal):
         embed = discord.Embed(
             title="CHECK-IN SUCCESS",
             description=(
-                f"**ผู้ใช้งาน:** {interaction.user.mention}\n"
+                f"**ผู้ใช้งาน:** {interaction.user.display_name} ({interaction.user.mention})\n"
                 f"• สถานะ: `Online` (กำลังทำงาน)\n"
                 f"• เวลาเริ่มงาน: `{now_dt.strftime('%H:%M:%S')}`\n"
                 f"• วันที่: `{now_dt.strftime('%d/%m/%Y')}`\n\n"
@@ -180,7 +180,7 @@ class OperationView(View):
         embed = discord.Embed(
             title="CHECK-IN SUCCESS",
             description=(
-                f"**ผู้ใช้งาน:** {interaction.user.mention}\n"
+                f"**ผู้ใช้งาน:** {interaction.user.display_name} ({interaction.user.mention})\n"
                 f"• สถานะ: `Online` (กำลังทำงาน)\n"
                 f"• เวลาเริ่มงาน: `{now_dt.strftime('%H:%M:%S')}`\n"
                 f"• วันที่: `{now_dt.strftime('%d/%m/%Y')}`\n\n"
@@ -258,7 +258,7 @@ class OperationView(View):
         embed = discord.Embed(
             title="CHECK-OUT SUCCESS",
             description=(
-                f"**ผู้ใช้งาน:** {interaction.user.mention}\n"
+                f"**ผู้ใช้งาน:** {interaction.user.display_name} ({interaction.user.mention})\n"
                 f"• Check-in: `{clean_start_display}`\n"
                 f"• Check-out: `{now_dt.strftime('%H:%M:%S')}`\n"
                 f"• รวมเวลาทำงานรอบนี้: `{format_duration(duration)}`\n\n"
@@ -418,7 +418,7 @@ class OperationsCog(commands.Cog):
                 timestamp=datetime.now(config.timezone)
             )
             embed.description = (
-                f"**ผู้ใช้งาน:** <@{user_id}> (`{player_name}`)\n"
+                f"**ผู้ใช้งาน:** {player_name} (<@{user_id}>)\n"
                 f"• สถานะ: `[{source_tag}]`\n"
                 f"• เริ่มต้น: `{start_time}`\n"
                 f"• สิ้นสุด: `{end_time}`\n"
@@ -556,6 +556,7 @@ class OperationsCog(commands.Cog):
                     pname = v.get("player_name", f"User {k}")
                     start_str = v.get("start_time", "")
                     duration_str = ""
+                    st_dt = None
                     try:
                         st_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=config.timezone)
                         duration_str = format_duration(int((now_dt - st_dt).total_seconds()))
@@ -565,13 +566,15 @@ class OperationsCog(commands.Cog):
                     # หาหน่วยจาก Role
                     member = guild.get_member(int(k))
                     matched_unit = "หน่วยอื่น ๆ / ไม่ระบุ"
+                    nickname = member.display_name if member else pname
                     if member:
                         for rid, rname in role_mapping.items():
                             if member.get_role(rid):
                                 matched_unit = rname
                                 break
 
-                    unit_groups[matched_unit].append(f"• <@{k}> — `{duration_str}`")
+                    time_display = f"<t:{int(st_dt.timestamp())}:R>" if st_dt else f"`{duration_str}`"
+                    unit_groups[matched_unit].append(f"• {nickname} (<@{k}>) — {time_display}")
 
             embed = discord.Embed(
                 title="WHAT UNIVERSAL — TIME TRACKER",
@@ -769,7 +772,7 @@ class OperationsCog(commands.Cog):
             description=(
                 f"-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์\n\n"
                 f"**สถานะ:** `Active` (เปิดรับลงเวลา)\n"
-                f"• เริ่มรอบเมื่อ: `<t:{int(now_dt.timestamp())}:T>`\n"
+                f"• เริ่มรอบเมื่อ: <t:{int(now_dt.timestamp())}:T>\n"
                 f"• รหัส OTP: ดูได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>\n"
             ),
             color=discord.Color.from_rgb(88, 101, 242),

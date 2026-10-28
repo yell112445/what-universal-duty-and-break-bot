@@ -21,7 +21,7 @@ def build_roster_embeds(
     title: str,
     description: str,
     color: discord.Color,
-    roster_lines: list[str],
+    roster_lines: Optional[list[str]] = None,
     section_name: str = "รายชื่อคนที่ Check-in อยู่",
     items_per_field: int = 10,
     footer_text: str = "What Universal • อัปเดตข้อมูลอัตโนมัติ",
@@ -37,7 +37,8 @@ def build_roster_embeds(
         if extra_fields:
             for f in extra_fields:
                 embed.add_field(name=f["name"], value=f["value"], inline=f.get("inline", False))
-        embed.add_field(name=section_name, value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
+        if roster_lines is not None and len(roster_lines) == 0 and not extra_fields:
+            embed.add_field(name=section_name, value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
         embed.set_footer(text=footer_text)
         if thumbnail_url:
             embed.set_thumbnail(url=thumbnail_url)
@@ -136,7 +137,7 @@ class CleanOperationView(View):
         embed = discord.Embed(
             title="CHECK-OUT SUCCESS",
             description=(
-                f"**ผู้ใช้งาน:** {interaction.user.mention}\n"
+                f"**ผู้ใช้งาน:** {interaction.user.display_name} ({interaction.user.mention})\n"
                 f"• Check-in: `10:00:00`\n"
                 f"• Check-out: `{datetime.now(config.timezone).strftime('%H:%M:%S')}`\n"
                 f"• รวมเวลาทำงาน: `2 ชม. 15 นาที`\n\n"
@@ -242,7 +243,7 @@ class CleanTicketInteractiveView(View):
         ]
         self.role_select = Select(
             placeholder="Select Department (Police / Medic)...",
-            options=options,
+            options=options[:25],
             custom_id="clean_ticket_role_select",
             row=0
         )
@@ -437,20 +438,16 @@ class UIPreviewCog(commands.Cog):
             extra_fields = [
                 {"name": "สถานะระบบ", "value": "`Active` (เปิดรับลงเวลา)", "inline": True},
                 {"name": "ตัดรอบอัตโนมัติ", "value": f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)", "inline": True},
-                {"name": "รหัส OTP", "value": f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", "inline": False}
-            ]
-            active_officers = [
-                f"• `[SWAT]` Jackson Teller — <t:{now_ts - 3600}:R>",
-                f"• `[POL]` Sarah Connor — <t:{now_ts - 1800}:R>",
-                f"• `[AIR]` Maverick Mitchell — <t:{now_ts - 600}:R>"
+                {"name": "รหัส OTP", "value": f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", "inline": False},
+                {"name": "🛡️ หน่วยปฏิบัติการพิเศษ (SWAT) [1]", "value": f"• {interaction.user.display_name} ({interaction.user.mention}) — <t:{now_ts - 3600}:R>", "inline": False},
+                {"name": "👮 ตำรวจนครบาล (Patrol) [1]", "value": f"• Sarah Connor (<@123456789012345678>) — <t:{now_ts - 1800}:R>", "inline": False},
+                {"name": "✈️ กองบินตำรวจ (Air Support) [1]", "value": f"• Maverick Mitchell (<@234567890123456789>) — <t:{now_ts - 600}:R>", "inline": False}
             ]
             op_embeds = build_roster_embeds(
                 title="WHAT UNIVERSAL — TIME TRACKER",
                 description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
                 color=c_blurple,
-                roster_lines=active_officers,
-                section_name="รายชื่อคนที่ Check-in อยู่",
-                items_per_field=10,
+                roster_lines=None,
                 footer_text="What Universal • อัปเดตข้อมูลอัตโนมัติ",
                 thumbnail_url=None,
                 extra_fields=extra_fields
@@ -479,8 +476,8 @@ class UIPreviewCog(commands.Cog):
             receipt_in = discord.Embed(
                 title="TIME LOG — CHECK-IN RECEIPT",
                 description=(
-                    f"**User:** {interaction.user.mention} (`{interaction.user.id}`)\n"
-                    f"• Timestamp: `<t:{now_ts}:F>`\n"
+                    f"**User:** {interaction.user.display_name} ({interaction.user.mention})\n"
+                    f"• Timestamp: <t:{now_ts}:F>\n"
                     f"• Status: `Online` (เริ่มบันทึกเวลา)\n\n"
                     f"-# บันทึกข้อมูลลงประวัติส่วนบุคคลเรียบร้อยแล้ว"
                 ),
@@ -495,10 +492,10 @@ class UIPreviewCog(commands.Cog):
             receipt_out = discord.Embed(
                 title="TIME LOG — CHECK-OUT RECEIPT",
                 description=(
-                    f"**User:** {interaction.user.mention} (`{interaction.user.id}`)\n"
+                    f"**User:** {interaction.user.display_name} ({interaction.user.mention})\n"
                     f"• Check-in: `10:00:00`\n"
                     f"• Check-out: `{now_dt.strftime('%H:%M:%S')}`\n"
-                    f"• Duration: `2 ชม. 15 นาที` (8,100 วินาที)\n\n"
+                    f"• Duration: `2 ชม. 15 นาที`\n\n"
                     f"-# สรุปยอดเวลาทำงานประจำรอบเรียบร้อยแล้ว"
                 ),
                 color=c_blurple
@@ -514,9 +511,8 @@ class UIPreviewCog(commands.Cog):
                 color=c_slate,
                 timestamp=now_dt
             )
-            audit_log.add_field(name="User", value=f"{interaction.user.mention} (`{interaction.user.display_name}`)", inline=True)
-            audit_log.add_field(name="Department / Unit", value="`[SWAT]` Field Operations", inline=True)
-            audit_log.add_field(name="Duration", value="`2 ชม. 15 นาที`", inline=False)
+            audit_log.add_field(name="User", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=True)
+            audit_log.add_field(name="Duration", value="`2 ชม. 15 นาที`", inline=True)
             audit_log.set_footer(text="What Universal Core Audit")
             await target_ch.send(
                 content="### 1.5 Central Audit Log (ห้องบันทึกประวัติส่วนกลางของแอดมิน)",
@@ -528,7 +524,7 @@ class UIPreviewCog(commands.Cog):
                 title="AUTO-STOP ANNOUNCEMENT",
                 description=(
                     f"ระบบจะทำการตัดรอบเวลาทำงานอัตโนมัติในอีก **10 นาที**\n"
-                    f"• เวลาตัดรอบ: `<t:{auto_stop_ts}:t>` (<t:{auto_stop_ts}:R>)\n\n"
+                    f"• เวลาตัดรอบ: <t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)\n\n"
                     f"-# กรุณาเคลียร์งานที่ค้างอยู่ให้เรียบร้อยก่อนระบบตัดรอบ"
                 ),
                 color=c_red
@@ -597,13 +593,13 @@ class UIPreviewCog(commands.Cog):
             archive_embed = discord.Embed(
                 title="REGISTRATION DOSSIER — JELLY WALK",
                 description=(
-                    f"**Member:** {interaction.user.mention} (`{interaction.user.id}`)\n"
+                    f"**Member:** {interaction.user.display_name} ({interaction.user.mention})\n"
                     f"• First Name: `Jelly`\n"
                     f"• Last Name: `Walk`\n"
                     f"• In-game Phone: `123-456`\n"
                     f"• Department: `Police`\n"
                     f"• Assigned Role: `@ตำรวจนครบาล`\n"
-                    f"• Completed At: `<t:{now_ts}:F>`\n\n"
+                    f"• Completed At: <t:{now_ts}:F>\n\n"
                     f"-# ข้อมูลได้รับการตรวจสอบและจัดเก็บเข้าฐานข้อมูลเรียบร้อยแล้ว"
                 ),
                 color=c_ice,
@@ -619,9 +615,9 @@ class UIPreviewCog(commands.Cog):
             join_embed = discord.Embed(
                 title="MEMBER JOINED",
                 description=(
-                    f"ยินดีต้อนรับ {interaction.user.mention} เข้าสู่ **What Universal**\n"
+                    f"ยินดีต้อนรับ {interaction.user.display_name} ({interaction.user.mention}) เข้าสู่ **What Universal**\n"
                     f"• Username: `{interaction.user.name}`\n"
-                    f"• Account Age: `<t:{int(interaction.user.created_at.timestamp())}:R>`\n\n"
+                    f"• Account Age: <t:{int(interaction.user.created_at.timestamp())}:R>\n\n"
                     f"-# กรุณาไปยังห้อง <#{config.get('WELCOME_TICKET_CHANNEL_ID')}> เพื่อเปิด Ticket ลงทะเบียน"
                 ),
                 color=c_blurple
@@ -636,9 +632,9 @@ class UIPreviewCog(commands.Cog):
             leave_log_embed = discord.Embed(
                 title="MEMBER LEFT",
                 description=(
-                    f"{interaction.user.mention} ได้ออกจากเซิร์ฟเวอร์\n"
-                    f"• Username: `{interaction.user.name}` (`{interaction.user.id}`)\n"
-                    f"• Joined: `<t:{now_ts - 86400 * 45}:R>`\n\n"
+                    f"{interaction.user.display_name} ({interaction.user.mention}) ได้ออกจากเซิร์ฟเวอร์\n"
+                    f"• Username: `{interaction.user.name}`\n"
+                    f"• Joined: <t:{now_ts - 86400 * 45}:R>\n\n"
                     f"-# ระบบบันทึกข้อมูลการออกจากเซิร์ฟเวอร์เรียบร้อยแล้ว"
                 ),
                 color=c_slate
@@ -710,7 +706,7 @@ class UIPreviewCog(commands.Cog):
                 color=c_slate,
                 timestamp=now_dt
             )
-            leave_audit.add_field(name="User", value=f"{interaction.user.mention}", inline=True)
+            leave_audit.add_field(name="User", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=True)
             leave_audit.add_field(name="Duration", value="`3 วัน`", inline=True)
             leave_audit.add_field(name="Period", value=f"<t:{now_ts}:D> — <t:{now_ts + 86400 * 3}:D>", inline=False)
             leave_audit.add_field(name="Reason", value="`ติดธุระส่วนตัวต่างจังหวัด`", inline=False)
@@ -721,32 +717,10 @@ class UIPreviewCog(commands.Cog):
             )
 
         # ======================================================================
-        # 4. DUTY GAP ALERT
-        # ======================================================================
-        if component in ["all", "duty_alert"]:
-            await target_ch.send("## ━━━ 4. DUTY MONITOR & GAP ALERT ━━━")
-
-            gap_alert = discord.Embed(
-                title="DUTY GAP ALERT",
-                description=(
-                    f"⚠️ **แจ้งเตือนขาดการติดต่อ:** {interaction.user.mention}\n\n"
-                    f"• สมาชิกไม่ได้อยู่ในห้อง Voice หรือไม่ออนไลน์ในเวรเกินกำหนด\n"
-                    f"• เวลาที่ขาดการติดต่อ: `1 ชม. 12 นาที` (เกินโควตา 1 ชม.)\n\n"
-                    f"-# กรุณากลับเข้าห้อง Voice หรือกด Check-out ให้ถูกต้อง"
-                ),
-                color=c_red
-            )
-            gap_alert.set_footer(text="What Universal Duty Monitor")
-            await target_ch.send(
-                content="### 4.1 Duty Gap Alert (การ์ดแจ้งเตือนสมาชิกหลุดเวร/ไม่อยู่ Voice นานเกินกำหนด)",
-                embed=gap_alert
-            )
-
-        # ======================================================================
-        # 5. CONFIG DASHBOARD
+        # 4. CONFIG DASHBOARD
         # ======================================================================
         if component in ["all", "config"]:
-            await target_ch.send("## ━━━ 5. SYSTEM CONFIGURATION DASHBOARD ━━━")
+            await target_ch.send("## ━━━ 4. SYSTEM CONFIGURATION DASHBOARD ━━━")
 
             cfg_embed = discord.Embed(
                 title="WHAT UNIVERSAL — SYSTEM CONFIG",
@@ -772,15 +746,15 @@ class UIPreviewCog(commands.Cog):
             )
             cfg_embed.set_footer(text="All settings update in-memory without restart")
             await target_ch.send(
-                content="### 5.1 System Config Dashboard (แผงตั้งค่าและภาพรวมคอนฟิก)",
+                content="### 4.1 System Config Dashboard (แผงตั้งค่าและภาพรวมคอนฟิก)",
                 embed=cfg_embed
             )
 
         # ======================================================================
-        # 6. SPLIT ENGINE STRESS TEST
+        # 5. SPLIT ENGINE STRESS TEST
         # ======================================================================
         if component in ["all", "split_demo"]:
-            await target_ch.send("## ━━━ 6. SPLIT ENGINE DEMONSTRATION ━━━")
+            await target_ch.send("## ━━━ 5. SPLIT ENGINE DEMONSTRATION ━━━")
 
             simulated_officers = [
                 f"• `[SWAT]` User Alpha {i:02d} — <t:{now_ts - (i * 120)}:R>"
@@ -802,7 +776,7 @@ class UIPreviewCog(commands.Cog):
                 extra_fields=split_extra
             )
             await target_ch.send(
-                content="### 6.1 Split Engine Stress Test (จำลองคน Check-in 25 คนพร้อมกัน ป้องกัน Embed ล้น)",
+                content="### 5.1 Split Engine Stress Test (จำลองคน Check-in 25 คนพร้อมกัน ป้องกัน Embed ล้น)",
                 embeds=split_embeds,
                 view=CleanOperationView()
             )
@@ -825,11 +799,10 @@ class UIPreviewCog(commands.Cog):
     @app_commands.choices(component=[
         app_commands.Choice(name="ทั้งหมดทุกส่วน (All System Components)", value="all"),
         app_commands.Choice(name="1. ระบบบันทึกเวลา (Time Tracker & Operations)", value="operations"),
-        app_commands.Choice(name="2. ระบบต้อนรับ & ตั๋ว (Welcome & Ticket Suite)", value="welcome"),
+        app_commands.Choice(name="2. ระบบต้อนรับ & Ticket (Welcome & Ticket Suite)", value="welcome"),
         app_commands.Choice(name="3. ระบบลางาน (Leave Board Suite)", value="leave"),
-        app_commands.Choice(name="4. แจ้งเตือนขาดเวร (Duty Gap Alert)", value="duty_alert"),
-        app_commands.Choice(name="5. แผงควบคุมการตั้งค่า (Config Dashboard)", value="config"),
-        app_commands.Choice(name="6. ทดสอบระบบแบ่งหน้า (Split Engine Demo)", value="split_demo")
+        app_commands.Choice(name="4. แผงควบคุมการตั้งค่า (Config Dashboard)", value="config"),
+        app_commands.Choice(name="5. ทดสอบระบบแบ่งหน้า (Split Engine Demo)", value="split_demo")
     ])
     async def preview_command(self, interaction: discord.Interaction, component: str = "all"):
         await self._execute_preview(interaction, component)
@@ -842,11 +815,10 @@ class UIPreviewCog(commands.Cog):
     @app_commands.choices(component=[
         app_commands.Choice(name="ทั้งหมดทุกส่วน (All System Components)", value="all"),
         app_commands.Choice(name="1. ระบบบันทึกเวลา (Time Tracker & Operations)", value="operations"),
-        app_commands.Choice(name="2. ระบบต้อนรับ & ตั๋ว (Welcome & Ticket Suite)", value="welcome"),
+        app_commands.Choice(name="2. ระบบต้อนรับ & Ticket (Welcome & Ticket Suite)", value="welcome"),
         app_commands.Choice(name="3. ระบบลางาน (Leave Board Suite)", value="leave"),
-        app_commands.Choice(name="4. แจ้งเตือนขาดเวร (Duty Gap Alert)", value="duty_alert"),
-        app_commands.Choice(name="5. แผงควบคุมการตั้งค่า (Config Dashboard)", value="config"),
-        app_commands.Choice(name="6. ทดสอบระบบแบ่งหน้า (Split Engine Demo)", value="split_demo")
+        app_commands.Choice(name="4. แผงควบคุมการตั้งค่า (Config Dashboard)", value="config"),
+        app_commands.Choice(name="5. ทดสอบระบบแบ่งหน้า (Split Engine Demo)", value="split_demo")
     ])
     async def preview_ui_command(self, interaction: discord.Interaction, component: str = "all"):
         await self._execute_preview(interaction, component)

@@ -178,7 +178,7 @@ class RoleSelect(Select):
             discord.SelectOption(label="ตำรวจ (Police)", value="ตำรวจ", description="รับบทบาทหน่วยงานตำรวจ (WUPD)"),
             discord.SelectOption(label="หมอ (Medic)", value="หมอ", description="รับบทบาทหน่วยงานแพทย์ (UMD)")
         ]
-        super().__init__(placeholder="เลือกหน่วยงานของคุณ (Police / Medic)...", min_values=1, max_values=1, options=options, custom_id="role_select", row=0)
+        super().__init__(placeholder="เลือกหน่วยงานของคุณ (Police / Medic)...", min_values=1, max_values=1, options=options[:25], custom_id="role_select", row=0)
 
     async def callback(self, interaction: discord.Interaction):
         ticket_id = str(interaction.channel.id)
@@ -337,13 +337,13 @@ class WelcomeTicketActiveView(View):
             log_embed = discord.Embed(
                 title=f"REGISTRATION DOSSIER — {fname.upper()} {lname.upper()}",
                 description=(
-                    f"**Member:** {owner.mention} (`{owner.id}`)\n"
+                    f"**Member:** {owner.display_name} ({owner.mention})\n"
                     f"• First Name: `{fname}`\n"
                     f"• Last Name: `{lname}`\n"
                     f"• In-game Phone: `{phone}`\n"
                     f"• Department: `{ticket['selected_role']}`\n"
                     f"• Assigned Role: `{', '.join(roles_assigned) if roles_assigned else 'ไม่พบ/ติดสิทธิ์'}`\n"
-                    f"• Completed At: `<t:{now_ts}:F>`\n\n"
+                    f"• Completed At: <t:{now_ts}:F>\n\n"
                     f"-# ข้อมูลได้รับการตรวจสอบและจัดเก็บเข้าฐานข้อมูลเรียบร้อยแล้ว"
                 ),
                 color=discord.Color.from_rgb(56, 182, 255),
@@ -566,9 +566,9 @@ class IntroductionCog(commands.Cog):
             embed = discord.Embed(
                 title="MEMBER JOINED",
                 description=(
-                    f"ยินดีต้อนรับ {member.mention} เข้าสู่ **What Universal**\n"
+                    f"ยินดีต้อนรับ {member.display_name} ({member.mention}) เข้าสู่ **What Universal**\n"
                     f"• Username: `{member.name}`\n"
-                    f"• Account Age: `<t:{int(member.created_at.timestamp())}:R>`\n\n"
+                    f"• Account Age: <t:{int(member.created_at.timestamp())}:R>\n\n"
                     f"-# กรุณาไปยังห้อง <#{config.get('WELCOME_TICKET_CHANNEL_ID')}> เพื่อเปิด Ticket ลงทะเบียน"
                 ),
                 color=c_blurple,
@@ -590,8 +590,8 @@ class IntroductionCog(commands.Cog):
             embed = discord.Embed(
                 title="MEMBER LEFT",
                 description=(
-                    f"{member.mention} ได้ออกจากเซิร์ฟเวอร์\n"
-                    f"• Username: `{member.name}` (`{member.id}`)\n"
+                    f"{member.display_name} ({member.mention}) ได้ออกจากเซิร์ฟเวอร์\n"
+                    f"• Username: `{member.name}`\n"
                     f"• Joined: {joined_str}\n\n"
                     f"-# ระบบบันทึกข้อมูลการออกจากเซิร์ฟเวอร์เรียบร้อยแล้ว"
                 ),

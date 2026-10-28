@@ -146,9 +146,12 @@ class ConfigSelectView(View):
             )
         ]
 
-        select = Select(placeholder="เลือกค่าที่ต้องการแก้ไข...", options=options)
-        select.callback = self.select_callback
-        self.add_item(select)
+        # Safeguard: Chunk options to max 25 per dropdown row to prevent Discord API limit errors
+        for idx, chunk in enumerate([options[i:i + 25] for i in range(0, len(options), 25)]):
+            placeholder = "เลือกค่าที่ต้องการแก้ไข..." if idx == 0 else f"เลือกค่าที่ต้องการแก้ไข... (ชุดที่ {idx + 1})"
+            select = Select(placeholder=placeholder, options=chunk, row=idx)
+            select.callback = self.select_callback
+            self.add_item(select)
 
     async def select_callback(self, interaction: discord.Interaction):
         key = interaction.data["values"][0]
