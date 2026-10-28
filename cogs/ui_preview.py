@@ -8,7 +8,7 @@ from typing import Optional, List
 from config_manager import config
 
 # ==============================================================================
-# Helper: Clean & Robust Embed Split Engine (ป้องกัน Embed ล้น / เกิน Character Limit)
+# Helper: Clean & Robust Embed Split Engine (ป้องกัน Embed ล้น 100%)
 # ==============================================================================
 
 def chunk_list(items: list, chunk_size: int):
@@ -21,16 +21,16 @@ def build_roster_embeds(
     description: str,
     color: discord.Color,
     roster_lines: list[str],
-    section_name: str = "Active Roster",
+    section_name: str = "รายชื่อคนที่ Check-in อยู่",
     items_per_field: int = 10,
-    footer_text: str = "What Universal • Live Sync",
+    footer_text: str = "What Universal • อัปเดตข้อมูลอัตโนมัติ",
     thumbnail_url: Optional[str] = None,
     extra_fields: Optional[list[dict]] = None
 ) -> list[discord.Embed]:
     """
     สร้าง Discord Embeds โดยคิดเผื่อกรณีข้อมูลยาวเกินกำหนด (Split Engine):
     - ตัดทอนให้อยู่ใน Field ไม่เกิน 1024 ตัวอักษร (แบ่ง Field 1-10, 11-20...)
-    - ถ้าจำนวนคนเยอะมากเกิน 25-30 คน จะแยกเป็น Multi-Embed (Chained Embeds) อัตโนมัติ
+    - ถ้าจำนวนคนเยอะมากเกิน 20 คน จะแยกเป็น Multi-Embed (Chained Embeds) อัตโนมัติ
     """
     if not roster_lines:
         embed = discord.Embed(
@@ -60,32 +60,31 @@ def build_roster_embeds(
         for f in extra_fields:
             main_embed.add_field(name=f["name"], value=f["value"], inline=f.get("inline", False))
 
-    # กำหนดให้ Embed แรกจุได้ไม่เกิน 2 Chunks (20 คน) เพื่อความโปร่ง สบายตา
     first_batch = chunks[:2]
     total_count = len(roster_lines)
 
     for idx, c in enumerate(first_batch):
         start_no = idx * items_per_field + 1
         end_no = start_no + len(c) - 1
-        field_label = f"{section_name} [{start_no}–{end_no} จาก {total_count}]" if len(chunks) > 1 else f"{section_name} [{total_count}]"
+        field_label = f"{section_name} [{start_no}–{end_no} จาก {total_count}]" if len(chunks) > 1 else f"{section_name} [{total_count} คน]"
         main_embed.add_field(
             name=field_label,
             value="\n".join(c),
             inline=False
         )
 
-    main_embed.set_footer(text=f"{footer_text} • Page 1/{max(1, len(chunks) // 2 + (1 if len(chunks) % 2 else 0))}")
+    main_embed.set_footer(text=f"{footer_text} • หน้า 1/{max(1, len(chunks) // 2 + (1 if len(chunks) % 2 else 0))}")
     if thumbnail_url:
         main_embed.set_thumbnail(url=thumbnail_url)
     embeds.append(main_embed)
 
-    # ถ้ามีมากกว่า 2 Chunks (> 20 คน) -> Split เป็น Chained Embed แผ่นที่ 2, 3 อัตโนมัติ
+    # ถ้ามีมากกว่า 2 Chunks (> 20 คน) -> Split เป็น Chained Embed แผ่นที่ 2 ต่อเนื่อง
     remaining_chunks = chunks[2:]
     page_no = 2
     for sub_chunks in chunk_list(remaining_chunks, 2):
         sub_embed = discord.Embed(
-            title=f"{title} (Continued)",
-            description=f"-# รายชื่อกำลังพลต่อเนื่อง (ส่วนที่ {page_no})",
+            title=f"{title} (หน้า {page_no})",
+            description=f"-# รายชื่อต่อเนื่อง",
             color=color
         )
         for idx_sub, c in enumerate(sub_chunks):
@@ -97,7 +96,7 @@ def build_roster_embeds(
                 value="\n".join(c),
                 inline=False
             )
-        sub_embed.set_footer(text=f"{footer_text} • Page {page_no}")
+        sub_embed.set_footer(text=f"{footer_text} • หน้า {page_no}")
         embeds.append(sub_embed)
         page_no += 1
 
@@ -105,16 +104,16 @@ def build_roster_embeds(
 
 
 # ==============================================================================
-# 1. Clean Operations System (ฟ้า, เทา, แดง / มินิมอล ไร้อิโมจิรก)
+# 1. Clean Operations System (ปุ่มฟ้า/เทา/เทา — ไม่มีสีแดง, ศัพท์ทั่วไป)
 # ==============================================================================
 
 class CleanOTPModal(Modal):
     def __init__(self):
-        super().__init__(title="OTP Verification")
+        super().__init__(title="ยืนยันรหัส OTP")
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
         self.otp_input = TextInput(
-            label="Security Passcode (OTP)",
-            placeholder=f"ระบุรหัส 4 หลักจากห้อง #{otp_ch_id}",
+            label="รหัส OTP",
+            placeholder=f"ดูรหัส 4 หลักได้จากห้อง #{otp_ch_id}",
             required=True,
             min_length=4,
             max_length=6
@@ -123,9 +122,9 @@ class CleanOTPModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            f"**Authentication Success**\n"
+            f"**Check-in สำเร็จ**\n"
             f"-# ยืนยันรหัส OTP `{self.otp_input.value.strip()}` เรียบร้อยแล้ว\n"
-            f"ระบบเริ่มบันทึกเวลาปฏิบัติหน้าที่ของคุณตั้งแต่เวลานี้",
+            f"ระบบเริ่มบันทึกเวลาทำงานของคุณตั้งแต่เวลานี้",
             ephemeral=True
         )
 
@@ -135,30 +134,30 @@ class CleanOperationView(View):
 
     # ปุ่ม 1: ฟ้า (Primary)
     @discord.ui.button(
-        label="Check-in (เข้าเวร)",
+        label="Check-in",
         style=discord.ButtonStyle.primary,
         custom_id="clean_op_checkin"
     )
     async def checkin_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_modal(CleanOTPModal())
 
-    # ปุ่ม 2: แดง (Danger) - ใช้เฉพาะตอนออกเวร / ยุติ
+    # ปุ่ม 2: เทา (Secondary) - เอาสีแดงออก เปลี่ยนเป็นเทา
     @discord.ui.button(
-        label="Check-out (ออกเวร)",
-        style=discord.ButtonStyle.danger,
+        label="Check-out",
+        style=discord.ButtonStyle.secondary,
         custom_id="clean_op_checkout"
     )
     async def checkout_button(self, interaction: discord.Interaction, button: Button):
         embed = discord.Embed(
-            title="SESSION TERMINATED",
+            title="CHECK-OUT SUCCESS",
             description=(
-                f"**Officer:** {interaction.user.mention}\n"
+                f"**ผู้ใช้งาน:** {interaction.user.mention}\n"
                 f"• Check-in: `10:00:00`\n"
                 f"• Check-out: `{datetime.now(config.timezone).strftime('%H:%M:%S')}`\n"
-                f"• Duration: `2 ชม. 15 นาที`\n\n"
-                f"-# ระบบบันทึกประวัติการปฏิบัติหน้าที่เรียบร้อยแล้ว ขอบคุณสำหรับเวรปฏิบัติการ"
+                f"• รวมเวลาทำงาน: `2 ชม. 15 นาที`\n\n"
+                f"-# ระบบบันทึกข้อมูลเรียบร้อยแล้ว ขอบคุณสำหรับการทำงานครับ"
             ),
-            color=discord.Color.from_rgb(237, 66, 69) # Soft Crimson
+            color=discord.Color.from_rgb(88, 101, 242) # Blurple
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
@@ -171,23 +170,23 @@ class CleanOperationView(View):
     async def status_button(self, interaction: discord.Interaction, button: Button):
         now_ts = int(datetime.now().timestamp())
         embed = discord.Embed(
-            title="OFFICER STATUS REPORT",
+            title="STATUS REPORT",
             color=discord.Color.from_rgb(88, 101, 242) # Blurple
         )
-        embed.add_field(name="Current Status", value="`On-Duty` (กำลังปฏิบัติหน้าที่)", inline=True)
-        embed.add_field(name="Started At", value=f"<t:{now_ts - 3600}:R>", inline=True)
-        embed.add_field(name="Today Total", value="`3 ชั่วโมง 40 นาที`", inline=False)
-        embed.set_footer(text="Data synchronized with Universal Core")
+        embed.add_field(name="สถานะปัจจุบัน", value="`Online` (กำลังทำงาน)", inline=True)
+        embed.add_field(name="เริ่มงานเมื่อ", value=f"<t:{now_ts - 3600}:R>", inline=True)
+        embed.add_field(name="เวลารวมวันนี้", value="`3 ชั่วโมง 40 นาที`", inline=False)
+        embed.set_footer(text="What Universal • ซิงค์ข้อมูลเรียลไทม์")
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 # ==============================================================================
-# 2. Clean Welcome Ticket System (ฟ้า, เทา, แดง / Modal เดียว / Checklist โปร่ง)
+# 2. Clean Welcome Ticket System (ปุ่มฟ้า/เทา, แดงเฉพาะปิดตั๋ว)
 # ==============================================================================
 
 class CleanCombinedInfoModal(Modal):
     def __init__(self):
-        super().__init__(title="Dossier Registration")
+        super().__init__(title="กรอกข้อมูลตัวละคร (IC)")
         self.name_input = TextInput(
             label="ชื่อ - นามสกุล ตัวละคร (IC)",
             placeholder="เช่น Somchai Jaidee",
@@ -195,7 +194,7 @@ class CleanCombinedInfoModal(Modal):
             max_length=60
         )
         self.phone_input = TextInput(
-            label="เบอร์โทรศัพท์ประจำตัว (IC)",
+            label="เบอร์โทรศัพท์ (IC)",
             placeholder="เช่น 081-234-5678 หรือ 123456",
             required=True,
             max_length=20
@@ -205,10 +204,10 @@ class CleanCombinedInfoModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            f"**Information Registered**\n"
-            f"• Name: `{self.name_input.value.strip()}`\n"
-            f"• Phone: `{self.phone_input.value.strip()}`\n\n"
-            f"-# กรุณาแนบรูปภาพฟอร์มหรือสตอรี่ในแชทนี้เพื่อปลดล็อคปุ่มยืนยัน",
+            f"**บันทึกข้อมูลสำเร็จ**\n"
+            f"• ชื่อ: `{self.name_input.value.strip()}`\n"
+            f"• เบอร์โทร: `{self.phone_input.value.strip()}`\n\n"
+            f"-# กรุณาแนบรูปถ่ายสตอรี่หรือเอกสารในแชทนี้เพื่อปลดล็อคปุ่มยืนยัน",
             ephemeral=True
         )
 
@@ -217,15 +216,15 @@ class CleanTicketInteractiveView(View):
         super().__init__(timeout=None)
         self.step = step
 
-        # Dropdown สายงาน (คลีน ไม่ใส่ emoji รก)
+        # Dropdown สายงาน
         options = [
-            discord.SelectOption(label="Police Department", value="police", description="กองบังคับการตำรวจนครบาล"),
-            discord.SelectOption(label="Police Cadet", value="beginner", description="นักเรียนตำรวจฝึกหัด"),
-            discord.SelectOption(label="Medical Department", value="md", description="หน่วยแพทย์ฉุกเฉิน"),
-            discord.SelectOption(label="Assistant Coordinator", value="assistant", description="ผู้ประสานงานหน่วยงาน")
+            discord.SelectOption(label="Police", value="police", description="ตำรวจนครบาล"),
+            discord.SelectOption(label="Cadet", value="beginner", description="นักเรียนตำรวจฝึกหัด"),
+            discord.SelectOption(label="Medic", value="md", description="หมอ / หน่วยแพทย์"),
+            discord.SelectOption(label="Assistant", value="assistant", description="ผู้ช่วย / ประสานงาน")
         ]
         select = Select(
-            placeholder="Select Department / Unit...",
+            placeholder="เลือกแผนก / ตำแหน่ง...",
             options=options,
             custom_id="clean_ticket_role_select",
             row=0
@@ -235,7 +234,7 @@ class CleanTicketInteractiveView(View):
 
         # ปุ่ม 1: เทา (Secondary) - กรอกข้อมูล
         btn_info = Button(
-            label="Fill Dossier",
+            label="กรอกข้อมูลตัวละคร",
             style=discord.ButtonStyle.secondary,
             custom_id="clean_ticket_fill_info",
             row=1
@@ -243,10 +242,10 @@ class CleanTicketInteractiveView(View):
         btn_info.callback = self.fill_info_callback
         self.add_item(btn_info)
 
-        # ปุ่ม 2: ฟ้า (Primary) - ยืนยันส่งเรื่อง (จะเปิดใช้งานเมื่อครบ)
+        # ปุ่ม 2: ฟ้า (Primary) - ยืนยันส่งเรื่อง
         is_ready = (step >= 3)
         btn_submit = Button(
-            label="Submit Verification" if is_ready else "Verification Pending",
+            label="ยืนยันข้อมูล" if is_ready else "รอข้อมูลครบ",
             style=discord.ButtonStyle.primary,
             disabled=not is_ready,
             custom_id="clean_ticket_submit",
@@ -255,9 +254,9 @@ class CleanTicketInteractiveView(View):
         btn_submit.callback = self.submit_callback
         self.add_item(btn_submit)
 
-        # ปุ่ม 3: แดง (Danger) - ปิดตั๋ว
+        # ปุ่ม 3: แดง (Danger) - ใช้สีแดงเฉพาะปุ่มสำคัญที่ลบข้อมูล/ปิดห้อง
         btn_close = Button(
-            label="Close Ticket",
+            label="ปิดตั๋วนี้",
             style=discord.ButtonStyle.danger,
             custom_id="clean_ticket_close",
             row=2
@@ -268,8 +267,8 @@ class CleanTicketInteractiveView(View):
     async def select_role_callback(self, interaction: discord.Interaction):
         selected = interaction.data["values"][0]
         await interaction.response.send_message(
-            f"**Department Updated**\n"
-            f"-# เลือกสังกัด `{selected.upper()}` เรียบร้อยแล้ว กรุณากด Fill Dossier เพื่อใส่ข้อมูลตัวละคร",
+            f"**เลือกแผนกเรียบร้อย**\n"
+            f"-# แผนก: `{selected.upper()}` กรุณากดปุ่ม **กรอกข้อมูลตัวละคร** เพื่อดำเนินการต่อ",
             ephemeral=True
         )
 
@@ -278,7 +277,7 @@ class CleanTicketInteractiveView(View):
 
     async def submit_callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "**Submission Complete**\n-# ข้อมูลถูกส่งเข้าส่วนกลางเรียบร้อยแล้ว แอดมินจะดำเนินการออกยศให้โดยเร็ว",
+            "**ส่งข้อมูลสำเร็จ**\n-# ระบบได้ส่งข้อมูลให้แอดมินตรวจสอบเรียบร้อยแล้วครับ",
             ephemeral=True
         )
 
@@ -290,7 +289,7 @@ class CleanTicketInteractiveView(View):
 
 
 # ==============================================================================
-# 3. Clean Leave System (ฟ้า, เทา / โควตาสบายตา)
+# 3. Clean Leave System (ปุ่มฟ้า/เทา/เทา — ศัพท์ทั่วไป)
 # ==============================================================================
 
 class CleanLeavePanelView(View):
@@ -299,42 +298,42 @@ class CleanLeavePanelView(View):
 
     # ปุ่ม 1: ฟ้า (Primary)
     @discord.ui.button(
-        label="Request Leave (7 Days)",
+        label="ยื่นลา 7 วัน",
         style=discord.ButtonStyle.primary,
         custom_id="clean_leave_l7"
     )
     async def l7_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
-            "-# เปิดหน้าต่างกำหนดวันลาพักผ่อน 7 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
+            "-# เปิดหน้าต่างระบุวันที่เริ่มลา 7 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
             ephemeral=True
         )
 
     # ปุ่ม 2: เทา (Secondary)
     @discord.ui.button(
-        label="Request Leave (3-4 Days)",
+        label="ยื่นลา 3-4 วัน",
         style=discord.ButtonStyle.secondary,
         custom_id="clean_leave_l34"
     )
     async def l34_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
-            "-# เปิดหน้าต่างกำหนดวันลาสั้น 3-4 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
+            "-# เปิดหน้าต่างระบุวันที่เริ่มลา 3-4 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
             ephemeral=True
         )
 
     # ปุ่ม 3: เทา (Secondary)
     @discord.ui.button(
-        label="My Quota",
+        label="เช็คสิทธิ์วันลา",
         style=discord.ButtonStyle.secondary,
         custom_id="clean_leave_check"
     )
     async def check_button(self, interaction: discord.Interaction, button: Button):
         embed = discord.Embed(
-            title="LEAVE QUOTA BALANCE",
-            description=f"**Officer:** {interaction.user.mention}\n-# อัปเดตสิทธิ์คงเหลือประจำเดือน",
+            title="สิทธิ์วันลาของคุณ",
+            description=f"**ผู้ใช้งาน:** {interaction.user.mention}\n-# อัปเดตสิทธิ์คงเหลือประจำเดือน",
             color=discord.Color.from_rgb(88, 101, 242)
         )
-        embed.add_field(name="7-Day Quota", value="`1 / 1` Available", inline=True)
-        embed.add_field(name="3-4 Day Quota", value="`2 / 2` Available", inline=True)
+        embed.add_field(name="โควตาลา 7 วัน", value="เหลือสิทธิ์ `1 ครั้ง`", inline=True)
+        embed.add_field(name="โควตาลา 3-4 วัน", value="เหลือสิทธิ์ `2 ครั้ง`", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -357,17 +356,17 @@ class UIPreviewCog(commands.Cog):
 
     @app_commands.command(
         name="preview_ui",
-        description="[Admin] ส่งตัวอย่างหน้าตา Clean Gen-Z UX/UI (ฟ้า/เทา/แดง + Split Engine) เข้าห้อง Preview"
+        description="[Admin] ส่งตัวอย่างหน้าตา Clean Gen-Z UX/UI (ปุ่มฟ้า/เทา + Split Engine) เข้าห้อง Preview"
     )
     @app_commands.describe(
         component="ระบบที่ต้องการดูตัวอย่าง (เลือก 'all' หรือ 'split_demo' เพื่อทดสอบ Embed ล้น)"
     )
     @app_commands.choices(component=[
         app_commands.Choice(name="ทั้งหมด (All Systems - Clean Style)", value="all"),
-        app_commands.Choice(name="1. ระบบปฏิบัติการ (Clean Operations)", value="operation"),
-        app_commands.Choice(name="2. ระบบต้อนรับ & ตั๋วใหม่ (Clean Welcome)", value="welcome"),
-        app_commands.Choice(name="3. ระบบลางาน & บอร์ดสด (Clean Leave)", value="leave"),
-        app_commands.Choice(name="4. ทดสอบ Split Engine (จำลองคนเข้าเวร 25 นาย)", value="split_demo")
+        app_commands.Choice(name="1. ระบบลงเวลา (Time Tracker)", value="operation"),
+        app_commands.Choice(name="2. ระบบลงทะเบียนสมาชิกใหม่ (Welcome & Ticket)", value="welcome"),
+        app_commands.Choice(name="3. ระบบแจ้งวันลา (Leave Board)", value="leave"),
+        app_commands.Choice(name="4. ทดสอบ Split Engine (จำลองคนทำงาน 25 คน)", value="split_demo")
     ])
     async def preview_ui_command(self, interaction: discord.Interaction, component: str = "all"):
         if not self._check_admin(interaction):
@@ -391,13 +390,13 @@ class UIPreviewCog(commands.Cog):
         c_ice = discord.Color.from_rgb(56, 182, 255)     # Clean Ice Blue
 
         # ----------------------------------------------------------------------
-        # 1. Operation Preview (Clean Gen-Z Style)
+        # 1. Operation Preview (Clean Gen-Z Style — ศัพท์ทั่วไป ไม่ใช้คำว่าเข้าเวร/ออกเวร)
         # ----------------------------------------------------------------------
         if component in ["all", "operation"]:
             extra_fields = [
-                {"name": "Session Status", "value": "`Active` (เปิดรับลงเวลา)", "inline": True},
-                {"name": "Auto Termination", "value": f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)", "inline": True},
-                {"name": "Security Key", "value": f"ดูรหัสยืนยันรอบปัจจุบันได้ที่ <#{config.get('OPERATION_OTP_CHANNEL')}>", "inline": False}
+                {"name": "สถานะระบบ", "value": "`Active` (เปิดรับลงเวลา)", "inline": True},
+                {"name": "ตัดรอบอัตโนมัติ", "value": f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)", "inline": True},
+                {"name": "รหัส OTP", "value": f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", "inline": False}
             ]
 
             active_officers = [
@@ -407,95 +406,95 @@ class UIPreviewCog(commands.Cog):
             ]
 
             op_embeds = build_roster_embeds(
-                title="WHAT UNIVERSAL — POLICE OPERATIONS",
-                description="-# ศูนย์บันทึกเวลาปฏิบัติหน้าที่และตรวจสอบกำลังพลประจำการ",
+                title="WHAT UNIVERSAL — TIME TRACKER",
+                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
                 color=c_blurple,
                 roster_lines=active_officers,
-                section_name="Active Roster",
+                section_name="รายชื่อคนที่ Check-in อยู่",
                 items_per_field=10,
-                footer_text="What Universal Police • Live Sync",
+                footer_text="What Universal • อัปเดตข้อมูลอัตโนมัติ",
                 thumbnail_url=config.get("EMBED_THUMBNAIL_URL"),
                 extra_fields=extra_fields
             )
 
             await target_ch.send(
-                content="### ─── 01. OPERATIONS SYSTEM (CLEAN GEN-Z STYLE) ───",
+                content="### ─── 01. ระบบลงเวลา (TIME TRACKER) ───",
                 embeds=op_embeds,
                 view=CleanOperationView()
             )
 
         # ----------------------------------------------------------------------
-        # 2. Welcome & Ticket Preview (Clean Minimalist)
+        # 2. Welcome & Ticket Preview (Clean Minimalist — ศัพท์ทั่วไป)
         # ----------------------------------------------------------------------
         if component in ["all", "welcome"]:
             welcome_panel_embed = discord.Embed(
-                title="WHAT UNIVERSAL — VERIFICATION DESK",
+                title="WHAT UNIVERSAL — REGISTRATION",
                 description=(
                     "-# ระบบลงทะเบียนและยืนยันตัวตนสมาชิกใหม่\n\n"
-                    "ยินดีต้อนรับสู่สังกัด What Universal\n"
-                    "กดปุ่มด้านล่างเพื่อเปิดตั๋วลงทะเบียนประจำตัวและเริ่มขั้นตอนการตรวจสอบ"
+                    "ยินดีต้อนรับสู่ What Universal\n"
+                    "กดปุ่มด้านล่างเพื่อเปิดตั๋วลงทะเบียนและกรอกข้อมูล"
                 ),
                 color=c_slate
             )
-            welcome_panel_embed.set_footer(text="Automated Verification Service")
+            welcome_panel_embed.set_footer(text="ระบบลงทะเบียนอัตโนมัติ 24 ชม.")
             if config.get("EMBED_THUMBNAIL_URL"):
                 welcome_panel_embed.set_thumbnail(url=config.get("EMBED_THUMBNAIL_URL"))
 
             btn_open_ticket = Button(
-                label="Open Ticket",
+                label="เปิดตั๋วลงทะเบียน",
                 style=discord.ButtonStyle.primary
             )
             v_welcome = View()
             v_welcome.add_item(btn_open_ticket)
 
             await target_ch.send(
-                content="### ─── 02.1 WELCOME PANEL (CLEAN STYLE) ───",
+                content="### ─── 02.1 แผงกดเปิดตั๋วลงทะเบียน (WELCOME PANEL) ───",
                 embed=welcome_panel_embed,
                 view=v_welcome
             )
 
             # Ticket Screen Checklist (ภายในตั๋ว)
             ticket_active_embed = discord.Embed(
-                title="ONBOARDING DOSSIER — #0042",
-                description="-# กรุณากรอกข้อมูลให้ครบถ้วนเพื่อรับสิทธิ์และยศประจำการ",
+                title="ตั๋วลงทะเบียน #0042",
+                description="-# กรุณากรอกข้อมูลให้ครบเพื่อรับยศในเซิร์ฟเวอร์",
                 color=c_ice
             )
             ticket_active_embed.add_field(
-                name="1. Unit Assignment",
-                value="`Police Department` (เลือกแล้ว)",
+                name="1. แผนก / ตำแหน่ง",
+                value="`ตำรวจ (Police)` (เลือกแล้ว)",
                 inline=False
             )
             ticket_active_embed.add_field(
-                name="2. Identity Information",
-                value="`Somchai Jaidee` • Tel: `081-234-5678`",
+                name="2. ข้อมูลตัวละคร (IC)",
+                value="`Somchai Jaidee` • เบอร์: `081-234-5678`",
                 inline=False
             )
             ticket_active_embed.add_field(
-                name="3. Story / Document",
-                value="`Pending` — ยังไม่พบรูปภาพ (กรุณาแนบส่งในแชทนี้)",
+                name="3. รูปถ่าย / สตอรี่",
+                value="`รอส่งรูป` (แนบรูปส่งในแชทนี้ได้เลย)",
                 inline=False
             )
-            ticket_active_embed.set_footer(text="Verification Status • Checklist will unlock submit automatically")
+            ticket_active_embed.set_footer(text="เมื่อข้อมูลครบแล้ว ปุ่มยืนยันจะเปิดให้กดอัตโนมัติ")
 
             await target_ch.send(
-                content="### ─── 02.2 INSIDE TICKET (SINGLE MODAL & DYNAMIC CHECKLIST) ───",
+                content="### ─── 02.2 หน้าจอภายในตั๋ว (INSIDE TICKET) ───",
                 embed=ticket_active_embed,
                 view=CleanTicketInteractiveView(step=2)
             )
 
         # ----------------------------------------------------------------------
-        # 3. Leave Board & Panel (Clean Minimalist)
+        # 3. Leave Board & Panel (Clean Minimalist — ศัพท์ทั่วไป)
         # ----------------------------------------------------------------------
         if component in ["all", "leave"]:
             leave_extra = [
                 {
-                    "name": "Upcoming Leaves",
+                    "name": "คนที่ลาล่วงหน้า",
                     "value": f"• `[AIR]` Thomas Wayne — ลา 4 วัน (<t:{now_ts + 86400 * 2}:D> — <t:{now_ts + 86400 * 6}:D>)",
                     "inline": False
                 },
                 {
-                    "name": "Daily Quota",
-                    "value": "In-use `2 / 5` slots (Available `3` slots)",
+                    "name": "โควตาการลาวันนี้",
+                    "value": "ใช้ไป `2 / 5` คน (ว่างอีก `3` ที่)",
                     "inline": False
                 }
             ]
@@ -506,29 +505,29 @@ class UIPreviewCog(commands.Cog):
             ]
 
             leave_board_embeds = build_roster_embeds(
-                title="WHAT UNIVERSAL — LEAVE ROSTER",
-                description="-# กระดานรายงานสถานะการลางานและโควตาประจำการแบบเรียลไทม์",
+                title="WHAT UNIVERSAL — กระดานแจ้งวันลา",
+                description="-# รายชื่อคนที่กำลังลาและสิทธิ์วันลาคงเหลือ",
                 color=c_slate,
                 roster_lines=active_leaves,
-                section_name="Active Leaves",
+                section_name="คนที่กำลังลาอยู่",
                 items_per_field=10,
-                footer_text="Leave Registry • Reset at 03:00",
+                footer_text="ตัดรอบวันลาทุก 03:00 น.",
                 extra_fields=leave_extra
             )
 
             leave_panel_embed = discord.Embed(
-                title="LEAVE APPLICATION DESK",
+                title="ระบบยื่นขอลาพักผ่อน",
                 description=(
-                    "-# ยื่นคำขอลาปฏิบัติหน้าที่ประจำการ\n\n"
-                    "• **7-Day Leave:** เหมาะสำหรับการลาพักผ่อนประจำเดือน\n"
-                    "• **3-4 Day Leave:** เหมาะสำหรับภารกิจสั้นเร่งด่วน\n\n"
-                    "-# ตรวจสอบโควตาคงเหลือก่อนกดยื่นคำขอเสมอ"
+                    "-# เลือกประเภทการลาที่ต้องการ\n\n"
+                    "• **ยื่นลา 7 วัน:** เหมาะสำหรับการลาพักผ่อนประจำเดือน\n"
+                    "• **ยื่นลา 3-4 วัน:** เหมาะสำหรับธุระสั้นเร่งด่วน\n\n"
+                    "-# กรุณาเช็คโควตาคงเหลือก่อนกดยื่นคำขอ"
                 ),
                 color=c_blurple
             )
 
             await target_ch.send(
-                content="### ─── 03. LEAVE BOARD & APPLICATION PANEL ───",
+                content="### ─── 03. กระดานวันลา & แผงยื่นคำขอ (LEAVE BOARD) ───",
                 embeds=leave_board_embeds
             )
             await target_ch.send(
@@ -537,42 +536,42 @@ class UIPreviewCog(commands.Cog):
             )
 
         # ----------------------------------------------------------------------
-        # 4. Split Engine Demo (จำลองเจ้าหน้าที่เข้าเวร 25 นาย)
+        # 4. Split Engine Demo (จำลองคนทำงาน 25 คน)
         # ----------------------------------------------------------------------
         if component in ["all", "split_demo"]:
             simulated_officers = [
-                f"• `[SWAT]` Officer Alpha {i:02d} — <t:{now_ts - (i * 120)}:R>"
+                f"• `[SWAT]` User Alpha {i:02d} — <t:{now_ts - (i * 120)}:R>"
                 for i in range(1, 26)
             ]
 
             split_extra = [
-                {"name": "Session Status", "value": "`High-Capacity Peak Session`", "inline": True},
-                {"name": "Total Headcount", "value": f"`{len(simulated_officers)} Officers`", "inline": True}
+                {"name": "สถานะระบบ", "value": "`เปิดรับลงเวลาปกติ`", "inline": True},
+                {"name": "จำนวนคนทำงานทั้งหมด", "value": f"`{len(simulated_officers)} คน`", "inline": True}
             ]
 
             split_embeds = build_roster_embeds(
-                title="WHAT UNIVERSAL — DUTY ROSTER (SPLIT ENGINE TEST)",
-                description="-# จำลองกำลังพลเข้าเวร 25 นาย • แสดงการแบ่ง Chunks/Multi-Embed อัตโนมัติ",
+                title="WHAT UNIVERSAL — TIME TRACKER (SPLIT ENGINE TEST)",
+                description="-# จำลองคน Check-in 25 คน • แสดงการแบ่งช่องและแบ่งหน้าอัตโนมัติ",
                 color=c_blurple,
                 roster_lines=simulated_officers,
-                section_name="Active Officers",
+                section_name="รายชื่อคนที่ Check-in อยู่",
                 items_per_field=10,
-                footer_text="Auto-Split Engine Demonstration",
+                footer_text="ทดสอบระบบแบ่ง Embed อัตโนมัติ",
                 thumbnail_url=config.get("EMBED_THUMBNAIL_URL"),
                 extra_fields=split_extra
             )
 
             await target_ch.send(
-                content="### ─── 04. SPLIT ENGINE STRESS TEST (25 OFFICERS AUTO-SPLIT) ───",
+                content="### ─── 04. ทดสอบระบบ SPLIT ENGINE (คนทำงาน 25 คน) ───",
                 embeds=split_embeds,
                 view=CleanOperationView()
             )
 
         await interaction.followup.send(
             f"✅ ส่งตัวอย่าง Clean Gen-Z UI Component ไปยังห้อง <#{target_ch.id}> เรียบร้อยแล้ว!\n"
-            f"• ธีม: มินิมอล คลีน ไม่รกอิโมจิ\n"
-            f"• สีปุ่ม: ฟ้า (Primary), เทา (Secondary), แดง (Danger)\n"
-            f"• ระบบ Split: แบ่ง Field อัตโนมัติ ป้องกัน Embed Character Limit เต็ม 100%",
+            f"• ปุ่ม: Check-in (ฟ้า) | Check-out (เทา) | My Status (เทา)\n"
+            f"• ภาษา: ศัพท์ทั่วไป เป็นกันเอง ไม่ใช้คำว่าเข้าเวร/ออกเวร\n"
+            f"• สีแดง: สงวนไว้เฉพาะปุ่มสำคัญที่ลบข้อมูล/ปิดห้องเท่านั้น",
             ephemeral=True
         )
 
