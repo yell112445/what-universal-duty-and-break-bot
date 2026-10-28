@@ -380,51 +380,73 @@ class CleanTicketInteractiveView(View):
 
 
 # ==============================================================================
-# 3. Clean Leave System (ปุ่มฟ้า/เทา/เทา — ศัพท์ทั่วไป)
+# 3. Clean Leave System (ยื่นลา / เช็คสิทธิ์ / เช็คเฉพาะจำนวนคนลาในวันนั้น)
 # ==============================================================================
+
+class CleanLeaveRequestModal(Modal):
+    def __init__(self):
+        super().__init__(title="ยื่นคำขอลางาน")
+        self.start_date = TextInput(
+            label="วันเริ่มลา (Start Date)",
+            placeholder="เช่น วันนี้ หรือ 29/10/2026",
+            required=True,
+            max_length=20
+        )
+        self.days_count = TextInput(
+            label="จำนวนวันที่ต้องการลา (วัน)",
+            placeholder="เช่น 1, 3, 5, 7",
+            required=True,
+            max_length=3
+        )
+        self.reason = TextInput(
+            label="เหตุผลการลา",
+            placeholder="เช่น ติดธุระส่วนตัว / ไปต่างจังหวัด",
+            style=discord.TextStyle.paragraph,
+            required=True,
+            max_length=200
+        )
+        self.add_item(self.start_date)
+        self.add_item(self.days_count)
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        # เช็คแค่จำนวนคนลาในวันนั้นๆ พอ (เงื่อนไขเรียบง่าย)
+        await interaction.response.send_message(
+            f"**ยื่นคำขอลางานเรียบร้อยแล้ว**\n"
+            f"• วันเริ่มลา: `{self.start_date.value.strip()}`\n"
+            f"• จำนวนวัน: `{self.days_count.value.strip()} วัน`\n"
+            f"• เหตุผล: `{self.reason.value.strip()}`\n\n"
+            f"-# ระบบตรวจสอบโควตาจำนวนคนลาในวันนั้นแล้ว (ยังไม่เต็ม) บันทึกข้อมูลสำเร็จครับ",
+            ephemeral=True
+        )
 
 class CleanLeavePanelView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    # ปุ่ม 1: ฟ้า (Primary)
+    # ปุ่ม 1: ยื่นลา (ฟ้า)
     @discord.ui.button(
-        label="ยื่นลา 7 วัน",
+        label="ยื่นลา",
         style=discord.ButtonStyle.primary,
-        custom_id="clean_leave_l7"
+        custom_id="clean_leave_request"
     )
-    async def l7_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(
-            "-# เปิดหน้าต่างระบุวันที่เริ่มลา 7 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
-            ephemeral=True
-        )
+    async def request_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.send_modal(CleanLeaveRequestModal())
 
-    # ปุ่ม 2: เทา (Secondary)
+    # ปุ่ม 2: เช็คสิทธิ์ (เทา)
     @discord.ui.button(
-        label="ยื่นลา 3-4 วัน",
-        style=discord.ButtonStyle.secondary,
-        custom_id="clean_leave_l34"
-    )
-    async def l34_button(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message(
-            "-# เปิดหน้าต่างระบุวันที่เริ่มลา 3-4 วัน (ระบบจะคำนวณวันสิ้นสุดและเช็คโควตาให้อัตโนมัติ)",
-            ephemeral=True
-        )
-
-    # ปุ่ม 3: เทา (Secondary)
-    @discord.ui.button(
-        label="เช็คสิทธิ์วันลา",
+        label="เช็คสิทธิ์",
         style=discord.ButtonStyle.secondary,
         custom_id="clean_leave_check"
     )
     async def check_button(self, interaction: discord.Interaction, button: Button):
         embed = discord.Embed(
-            title="สิทธิ์วันลาของคุณ",
-            description=f"**ผู้ใช้งาน:** {interaction.user.mention}\n-# อัปเดตสิทธิ์คงเหลือประจำเดือน",
+            title="สิทธิ์การลางานของคุณ",
+            description=f"**ผู้ใช้งาน:** {interaction.user.mention}\n-# ตรวจสอบโควตาและสถานะการลา",
             color=discord.Color.from_rgb(88, 101, 242)
         )
-        embed.add_field(name="โควตาลา 7 วัน", value="เหลือสิทธิ์ `1 ครั้ง`", inline=True)
-        embed.add_field(name="โควตาลา 3-4 วัน", value="เหลือสิทธิ์ `2 ครั้ง`", inline=True)
+        embed.add_field(name="สถานะ", value="`ปกติ` (สามารถยื่นลาได้)", inline=True)
+        embed.add_field(name="โควตาวันนี้", value="`2 / 5` คน (ว่าง 3 ที่)", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
@@ -560,30 +582,30 @@ class UIPreviewCog(commands.Cog):
             )
 
         # ----------------------------------------------------------------------
-        # 3. Leave Board & Panel (Clean Minimalist — ศัพท์ทั่วไป)
+        # 3. Leave Board & Request (รวบเป็นข้อความเดียว + เงื่อนไขเรียบง่าย)
         # ----------------------------------------------------------------------
         if component in ["all", "leave"]:
             leave_extra = [
                 {
-                    "name": "คนที่ลาล่วงหน้า",
-                    "value": f"• `[AIR]` Thomas Wayne — ลา 4 วัน (<t:{now_ts + 86400 * 2}:D> — <t:{now_ts + 86400 * 6}:D>)",
+                    "name": "โควตาวันนี้",
+                    "value": "ใช้ไป `2 / 5` คน (ว่างอีก `3` ที่)",
                     "inline": False
                 },
                 {
-                    "name": "โควตาการลาวันนี้",
-                    "value": "ใช้ไป `2 / 5` คน (ว่างอีก `3` ที่)",
+                    "name": "คนที่ลาล่วงหน้า",
+                    "value": f"• `[AIR]` Thomas Wayne — ลา 4 วัน (<t:{now_ts + 86400 * 2}:D> — <t:{now_ts + 86400 * 6}:D>)",
                     "inline": False
                 }
             ]
 
             active_leaves = [
-                f"• `[SWAT]` Alex Mercer — ลา 7 วัน (สิ้นสุด <t:{now_ts + 86400 * 3}:D> • เหลือ 3 วัน)",
-                f"• `[POL]` Diana Prince — ลา 3 วัน (สิ้นสุด <t:{now_ts + 86400}:D> • เหลือ 1 วัน)"
+                f"• `[SWAT]` Alex Mercer — สิ้นสุด <t:{now_ts + 86400 * 3}:D> (เหลือ 3 วัน)",
+                f"• `[POL]` Diana Prince — สิ้นสุด <t:{now_ts + 86400}:D> (เหลือ 1 วัน)"
             ]
 
             leave_board_embeds = build_roster_embeds(
-                title="WHAT UNIVERSAL — กระดานแจ้งวันลา",
-                description="-# รายชื่อคนที่กำลังลาและสิทธิ์วันลาคงเหลือ",
+                title="WHAT UNIVERSAL — LEAVE BOARD",
+                description="-# รายงานสถานะวันลาและตรวจสอบโควตาประจำวัน",
                 color=c_slate,
                 roster_lines=active_leaves,
                 section_name="คนที่กำลังลาอยู่",
@@ -592,23 +614,10 @@ class UIPreviewCog(commands.Cog):
                 extra_fields=leave_extra
             )
 
-            leave_panel_embed = discord.Embed(
-                title="ระบบยื่นขอลาพักผ่อน",
-                description=(
-                    "-# เลือกประเภทการลาที่ต้องการ\n\n"
-                    "• **ยื่นลา 7 วัน:** เหมาะสำหรับการลาพักผ่อนประจำเดือน\n"
-                    "• **ยื่นลา 3-4 วัน:** เหมาะสำหรับธุระสั้นเร่งด่วน\n\n"
-                    "-# กรุณาเช็คโควตาคงเหลือก่อนกดยื่นคำขอ"
-                ),
-                color=c_blurple
-            )
-
+            # รวบเป็นข้อความเดียว ไม่ต้องแยกส่ง 2 กล่อง!
             await target_ch.send(
-                content="### ─── 03. กระดานวันลา & แผงยื่นคำขอ (LEAVE BOARD) ───",
-                embeds=leave_board_embeds
-            )
-            await target_ch.send(
-                embed=leave_panel_embed,
+                content="### ─── 03. LEAVE BOARD ───",
+                embeds=leave_board_embeds,
                 view=CleanLeavePanelView()
             )
 
