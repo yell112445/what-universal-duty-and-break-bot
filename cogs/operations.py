@@ -393,7 +393,13 @@ class OperationsCog(commands.Cog):
         self.refresh_status_message_loop.cancel()
 
     def is_assistant_or_above(self, interaction: discord.Interaction) -> bool:
-        return config.is_assistant_or_above(interaction.user.id)
+        if config.is_assistant_or_above(interaction.user.id):
+            return True
+        ast_role_id = config.get("ASSISTANT_ROLE_ID")
+        if ast_role_id and isinstance(interaction.user, discord.Member):
+            if interaction.user.get_role(int(ast_role_id)):
+                return True
+        return False
 
     async def get_channel(self, channel_id_or_name: Any) -> Optional[discord.abc.GuildChannel]:
         """ดึงอ็อบเจ็กต์ช่องโดยค้นหาจาก Cache ก่อน หากไม่พบจะ Fetch ตรงจาก Discord API"""
