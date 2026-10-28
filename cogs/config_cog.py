@@ -138,6 +138,11 @@ class ConfigSelectView(View):
                 label="ช่อง Data Log สรุปข้อมูลผู้เล่น",
                 value="WELCOME_DATA_LOG_CHANNEL_ID",
                 description="Channel ID ห้อง Log ตั๋วที่เสร็จสิ้น"
+            ),
+            discord.SelectOption(
+                label="ช่อง Preview UX/UI สำหรับทดสอบ",
+                value="UI_PREVIEW_CHANNEL_ID",
+                description="Channel ID ห้องดูตัวอย่าง UI"
             )
         ]
 
@@ -167,7 +172,8 @@ class ConfigSelectView(View):
             "WELCOME_TICKET_CATEGORY_ID": "int",
             "WELCOME_DATA_LOG_CHANNEL_ID": "int",
             "WELCOME_JOIN_LOG_CHANNEL_ID": "int",
-            "LINK_LOG_CHANNEL_ID": "int"
+            "LINK_LOG_CHANNEL_ID": "int",
+            "UI_PREVIEW_CHANNEL_ID": "int"
         }
         val_type = val_types.get(key, "str")
         modal = ConfigEditModal(key, str(curr_val), key, val_type)
@@ -235,7 +241,8 @@ class ConfigCog(commands.Cog):
                 f"• Category ID: `{config.get('WELCOME_TICKET_CATEGORY_ID')}`\n"
                 f"• Data Log: <#{config.get('WELCOME_DATA_LOG_CHANNEL_ID')}>\n"
                 f"• Join Log: <#{config.get('WELCOME_JOIN_LOG_CHANNEL_ID')}>\n"
-                f"• Link Log: <#{config.get('LINK_LOG_CHANNEL_ID')}>"
+                f"• Link Log: <#{config.get('LINK_LOG_CHANNEL_ID')}>\n"
+                f"• UI Preview: <#{config.get('UI_PREVIEW_CHANNEL_ID')}>"
             ),
             inline=False
         )
@@ -319,6 +326,7 @@ class ConfigCog(commands.Cog):
             "WELCOME_DATA_LOG_CHANNEL_ID",
             "WELCOME_JOIN_LOG_CHANNEL_ID",
             "LINK_LOG_CHANNEL_ID",
+            "UI_PREVIEW_CHANNEL_ID",
             "POLICE_ROLE_ID",
             "BEGINNER_ROLE_ID",
             "MD_ROLE_ID",
@@ -373,6 +381,7 @@ class ConfigCog(commands.Cog):
         app_commands.Choice(name="Operations (ระบบปฏิบัติการ)", value="cogs.operations"),
         app_commands.Choice(name="Breaktime (ระบบลางาน)", value="cogs.breaktime"),
         app_commands.Choice(name="Duty Check (ระบบเข้า-ออกเวร)", value="cogs.duty_check"),
+        app_commands.Choice(name="UI Preview (ระบบแสดงตัวอย่าง)", value="cogs.ui_preview"),
         app_commands.Choice(name="Config Cog (ระบบตั้งค่า)", value="cogs.config_cog")
     ])
     async def reload_cogs_command(self, interaction: discord.Interaction, cog_name: Optional[str] = "all"):
@@ -381,7 +390,7 @@ class ConfigCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
         cogs_to_reload = (
-            ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.breaktime", "cogs.duty_check"]
+            ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.ui_preview", "cogs.breaktime", "cogs.duty_check"]
             if cog_name == "all" else [cog_name]
         )
 
@@ -411,7 +420,7 @@ class ConfigCog(commands.Cog):
             out_str = stdout.decode().strip() or stderr.decode().strip()
 
             reload_results = []
-            for c in ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.breaktime", "cogs.duty_check"]:
+            for c in ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.ui_preview", "cogs.breaktime", "cogs.duty_check"]:
                 try:
                     await self.bot.reload_extension(c)
                     reload_results.append(f"✅ `{c}`: อัปเดตสำเร็จ")
