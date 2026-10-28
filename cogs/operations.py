@@ -45,6 +45,39 @@ def format_duration(total_seconds: int) -> str:
 def generate_otp() -> str:
     return f"{random.randint(0, 9999):04d}"
 
+def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> Optional[int]:
+    """คำนวณ Unix Timestamp ของรอบตัดเวลาถัดไปจริง ๆ
+    - หากมีการระบุ specific_time (HH:MM) จะคำนวณเวลานั้น (ถ้าผ่านไปแล้วในวันนี้จะบวกไปวันพรุ่งนี้)
+    - หากไม่มี ให้คำนวณจากตารางเวลาใน config AUTO_STOP_TIMES หาเวลาที่กำลังจะมาถึงเร็วที่สุด
+    """
+    now_dt = datetime.now(config.timezone)
+    if specific_time:
+        try:
+            sh, sm = map(int, specific_time.strip().split(":"))
+            stop_dt = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
+            if stop_dt <= now_dt:
+                stop_dt += timedelta(days=1)
+            return int(stop_dt.timestamp())
+        except Exception:
+            pass
+
+    auto_stop_times = config.get("AUTO_STOP_TIMES", [])
+    if auto_stop_times:
+        cand = []
+        for t in auto_stop_times:
+            try:
+                th, tm = map(int, t.strip().split(":"))
+                tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
+                if tdt <= now_dt:
+                    tdt += timedelta(days=1)
+                cand.append(tdt)
+            except Exception:
+                pass
+        if cand:
+            cand.sort()
+            return int(cand[0].timestamp())
+    return None
+
 class OTPModal(Modal):
     def __init__(self, opener_id: int):
         super().__init__(title="OTP Verification")
@@ -419,27 +452,11 @@ class OperationsCog(commands.Cog):
                     color=c_blurple
                 )
 
-            # 1. ส่ง Personal Log ให้ผู้ใช้
+            # ส่ง Personal Log ให้ผู้ใช้ (ใบเสร็จส่วนบุคคล Check-in / Check-out)
             ch_target = config.get("OPERATION_PERSONAL_LOG_CHANNELS") or config.get("OPERATION_LOG_CHANNEL_ID")
             ch = await self.get_channel(ch_target)
             if ch:
                 await ch.send(embed=embed)
-
-            # 2. ถ้าเป็น Check-out / Force Stop ให้ส่งเข้า Central Audit Log (ห้อง #operation-log)
-            if source != "user_checkin":
-                audit_ch_id = config.get("OPERATION_LOG_CHANNEL_ID")
-                if audit_ch_id and str(audit_ch_id) != str(ch_target):
-                    audit_ch = await self.get_channel(audit_ch_id)
-                    if audit_ch:
-                        audit_log = discord.Embed(
-                            title="AUDIT LOG — USER SESSION ENDED",
-                            color=c_slate,
-                            timestamp=datetime.now(config.timezone)
-                        )
-                        audit_log.add_field(name="User", value=f"{player_name} (<@{user_id}>)", inline=True)
-                        audit_log.add_field(name="Duration", value=f"`{format_duration(duration) if duration > 0 else '-'}`", inline=True)
-                        audit_log.set_footer(text="What Universal Core Audit")
-                        await audit_ch.send(embed=audit_log)
         except Exception as e:
             logger.error(f"เกิดข้อผิดพลาดในการส่ง Personal Log: {e}")
 
@@ -584,33 +601,9 @@ class OperationsCog(commands.Cog):
                     unit_groups[matched_unit].append(f"• {nickname} (<@{k}>) — {time_display}")
 
             # คำนวณเวลาตัดรอบ
-            auto_stop_str = op_status.get("stop_time")
-            auto_stop_ts = None
-            if auto_stop_str:
-                try:
-                    sh, sm = map(int, auto_stop_str.split(":"))
-                    stop_dt = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
-                    if stop_dt < now_dt:
-                        stop_dt += timedelta(days=1)
-                    auto_stop_ts = int(stop_dt.timestamp())
-                except Exception:
-                    pass
-            elif config.get("AUTO_STOP_TIMES"):
-                cand = []
-                for t in config.get("AUTO_STOP_TIMES", []):
-                    try:
-                        th, tm = map(int, t.strip().split(":"))
-                        tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
-                        if tdt < now_dt:
-                            tdt += timedelta(days=1)
-                        cand.append(tdt)
-                    except Exception:
-                        pass
-                if cand:
-                    cand.sort()
-                    auto_stop_ts = int(cand[0].timestamp())
-
-            auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ตามกำหนดการ"
+            active_stop = op_status.get("temp_auto_stop") or op_status.get("stop_time")
+            auto_stop_ts = get_next_auto_stop_ts(active_stop)
+            auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ไม่มีกำหนด"
             otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
             otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
 
@@ -736,8 +729,11 @@ class OperationsCog(commands.Cog):
                 )
 
         # ลบข้อความปุ่มและ OTP
+        status_msg_id = op_status.get("status_message_id")
         button_msgs = op_status.get("button_messages", []) or []
         for bm in button_msgs:
+            if status_msg_id and str(bm.get("message_id")) == str(status_msg_id):
+                continue
             try:
                 ch = await self.get_channel(bm["channel_id"])
                 if ch:
@@ -811,7 +807,8 @@ class OperationsCog(commands.Cog):
             return await interaction.followup.send("⚠️ มีรอบการทำงานเปิดอยู่แล้ว", ephemeral=True)
 
         now_dt = datetime.now(config.timezone)
-        auto_stop_val = f"`{stop_time}` น." if stop_time else "ตามกำหนดการ"
+        auto_stop_ts = get_next_auto_stop_ts(stop_time)
+        auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ไม่มีกำหนด"
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
         otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
 
@@ -827,14 +824,9 @@ class OperationsCog(commands.Cog):
         embed.add_field(name="รายชื่อคนที่ Check-in อยู่", value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
         embed.set_footer(text="What Universal • อัปเดตข้อมูลอัตโนมัติ")
 
-        status_msg = await interaction.channel.send(embed=embed)
-
-        # ส่งปุ่ม
+        # ส่งแผงบันทึกเวลาพร้อมปุ่มในข้อความเดียวกัน
         btn_view = OperationView()
-        sent_btn_msg = await interaction.channel.send(
-            content="-# กดปุ่มด้านล่างเพื่อลงเวลาทำงาน หรือตรวจสอบสถานะของคุณ",
-            view=btn_view
-        )
+        status_msg = await interaction.channel.send(embed=embed, view=btn_view)
 
         # สร้าง OTP แรก
         otp_min = int(config.get("OTP_EXPIRY_MINUTES", 20))
@@ -846,7 +838,7 @@ class OperationsCog(commands.Cog):
             "stop_time": stop_time,
             "status_message_id": status_msg.id,
             "status_channel_id": interaction.channel.id,
-            "button_messages": [{"channel_id": sent_btn_msg.channel.id, "message_id": sent_btn_msg.id}],
+            "button_messages": [{"channel_id": status_msg.channel.id, "message_id": status_msg.id}],
             "recent_sessions": [],
             "otp_verified_users": {},
             "otp": first_otp,
@@ -922,6 +914,7 @@ class OperationsCog(commands.Cog):
             return await interaction.followup.send("⚠️ ขณะนี้ไม่มีรอบการปฏิบัติงานที่เปิดอยู่", ephemeral=True)
 
         op_status["temp_auto_stop"] = time
+        op_status["stop_time"] = time
         await save_operation_status(op_status)
 
         await self.send_assistant_log(

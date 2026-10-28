@@ -421,7 +421,11 @@ class UIPreviewCog(commands.Cog):
 
         now_ts = int(datetime.now().timestamp())
         now_dt = datetime.now(config.timezone)
-        auto_stop_ts = int((datetime.now() + timedelta(minutes=45)).timestamp())
+        try:
+            from cogs.operations import get_next_auto_stop_ts
+            auto_stop_ts = get_next_auto_stop_ts() or int((now_dt + timedelta(minutes=45)).timestamp())
+        except Exception:
+            auto_stop_ts = int((datetime.now() + timedelta(minutes=45)).timestamp())
 
         c_slate = discord.Color.from_rgb(47, 49, 54)     # Deep Slate Dark
         c_blurple = discord.Color.from_rgb(88, 101, 242) # Discord Blurple
@@ -505,21 +509,7 @@ class UIPreviewCog(commands.Cog):
                 embed=receipt_out
             )
 
-            # 1.5 Central Audit Log (ห้อง #operation-log)
-            audit_log = discord.Embed(
-                title="AUDIT LOG — USER SESSION ENDED",
-                color=c_slate,
-                timestamp=now_dt
-            )
-            audit_log.add_field(name="User", value=f"{interaction.user.display_name} ({interaction.user.mention})", inline=True)
-            audit_log.add_field(name="Duration", value="`2 ชม. 15 นาที`", inline=True)
-            audit_log.set_footer(text="What Universal Core Audit")
-            await target_ch.send(
-                content="### 1.5 Central Audit Log (ห้องบันทึกประวัติส่วนกลางของแอดมิน)",
-                embed=audit_log
-            )
-
-            # 1.6 Auto-Stop Warning Announcement
+            # 1.5 Auto-Stop Warning Announcement
             warn_embed = discord.Embed(
                 title="AUTO-STOP ANNOUNCEMENT",
                 description=(
@@ -531,7 +521,7 @@ class UIPreviewCog(commands.Cog):
             )
             warn_embed.set_footer(text="What Universal • Auto Termination Service")
             await target_ch.send(
-                content="### 1.6 Auto-Stop Warning (ประกาศเตือน 10 นาทีก่อนตัดรอบอัตโนมัติ)",
+                content="### 1.5 Auto-Stop Warning (ประกาศเตือน 10 นาทีก่อนตัดรอบอัตโนมัติ)",
                 embed=warn_embed
             )
 
