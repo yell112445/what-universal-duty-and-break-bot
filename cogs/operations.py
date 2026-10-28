@@ -45,15 +45,19 @@ def format_duration(total_seconds: int) -> str:
 def generate_otp() -> str:
     return f"{random.randint(0, 9999):04d}"
 
-def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> Optional[int]:
+DEFAULT_AUTO_STOP_TIMES = ["03:00", "13:52", "18:00", "20:32"]
+
+def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> int:
     """คำนวณ Unix Timestamp ของรอบตัดเวลาถัดไปจริง ๆ
-    - หากมีการระบุ specific_time (HH:MM) จะคำนวณเวลานั้น (ถ้าผ่านไปแล้วในวันนี้จะบวกไปวันพรุ่งนี้)
-    - หากไม่มี ให้คำนวณจากตารางเวลาใน config AUTO_STOP_TIMES หาเวลาที่กำลังจะมาถึงเร็วที่สุด
+    - หากมีการระบุ specific_time (HH:MM) จะคำนวณเวลานั้น
+    - หากไม่มี หรือเป็น None/Empty ให้คำนวณจากตารางเวลาใน config AUTO_STOP_TIMES
+      โดยถ้า config ว่างเปล่า จะใช้ DEFAULT_AUTO_STOP_TIMES ทันที
+    - การันตีคืนค่า int Unix timestamp เสมอ ไม่มีวันคืนค่า None หรือแสดง 'ไม่มีกำหนด'
     """
     now_dt = datetime.now(config.timezone)
-    if specific_time:
+    if specific_time and str(specific_time).strip().lower() not in ["none", "null", ""]:
         try:
-            sh, sm = map(int, specific_time.strip().split(":"))
+            sh, sm = map(int, str(specific_time).strip().split(":"))
             stop_dt = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
             if stop_dt <= now_dt:
                 stop_dt += timedelta(days=1)
@@ -61,22 +65,37 @@ def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> Optional[int]:
         except Exception:
             pass
 
-    auto_stop_times = config.get("AUTO_STOP_TIMES", [])
-    if auto_stop_times:
-        cand = []
-        for t in auto_stop_times:
-            try:
-                th, tm = map(int, t.strip().split(":"))
-                tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
-                if tdt <= now_dt:
-                    tdt += timedelta(days=1)
-                cand.append(tdt)
-            except Exception:
-                pass
-        if cand:
-            cand.sort()
-            return int(cand[0].timestamp())
-    return None
+    raw_times = config.get("AUTO_STOP_TIMES")
+    if not raw_times:
+        raw_times = DEFAULT_AUTO_STOP_TIMES
+
+    if isinstance(raw_times, str):
+        auto_stop_times = [x.strip() for x in raw_times.split(",") if x.strip()]
+    elif isinstance(raw_times, (list, tuple)):
+        auto_stop_times = [str(x).strip() for x in raw_times if str(x).strip()]
+    else:
+        auto_stop_times = DEFAULT_AUTO_STOP_TIMES
+
+    if not auto_stop_times:
+        auto_stop_times = DEFAULT_AUTO_STOP_TIMES
+
+    cand = []
+    for t in auto_stop_times:
+        try:
+            th, tm = map(int, t.strip().split(":"))
+            tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
+            if tdt <= now_dt:
+                tdt += timedelta(days=1)
+            cand.append(tdt)
+        except Exception:
+            pass
+
+    if cand:
+        cand.sort()
+        return int(cand[0].timestamp())
+
+    # Fallback กรณีสุดวิสัย: 3 ชั่วโมงข้างหน้า
+    return int((now_dt + timedelta(hours=3)).timestamp())
 
 class OTPModal(Modal):
     def __init__(self, opener_id: int):
@@ -144,6 +163,8 @@ class OTPModal(Modal):
                 duration=0,
                 source="user_checkin"
             )
+        if cog and hasattr(cog, "update_status_message"):
+            asyncio.create_task(cog.update_status_message())
 
         embed = discord.Embed(
             title="CHECK-IN SUCCESS",
@@ -209,6 +230,8 @@ class OperationView(View):
                 duration=0,
                 source="user_checkin"
             )
+        if cog and hasattr(cog, "update_status_message"):
+            asyncio.create_task(cog.update_status_message())
 
         embed = discord.Embed(
             title="CHECK-IN SUCCESS",
@@ -286,6 +309,8 @@ class OperationView(View):
                 duration=duration,
                 source="user_checkout"
             )
+        if cog and hasattr(cog, "update_status_message"):
+            asyncio.create_task(cog.update_status_message())
 
         clean_start_display = start_time_str.split(" ")[1].split(".")[0] if " " in start_time_str else start_time_str
         embed = discord.Embed(
@@ -544,9 +569,8 @@ class OperationsCog(commands.Cog):
         except Exception as e:
             logger.error(f"[OperationsCog] otp_rotate_loop error: {e}")
 
-    @tasks.loop(seconds=15)
-    async def refresh_status_message_loop(self):
-        """อัปเดต Embed สถานะกำลังพลที่ปฏิบัติการอยู่แบบ Realtime"""
+    async def update_status_message(self):
+        """อัปเดต Embed สถานะกำลังพลที่ปฏิบัติการอยู่แบบ Realtime ทันที"""
         try:
             op_status = await load_operation_status()
             status_msg_id = op_status.get("status_message_id")
@@ -603,7 +627,7 @@ class OperationsCog(commands.Cog):
             # คำนวณเวลาตัดรอบ
             active_stop = op_status.get("temp_auto_stop") or op_status.get("stop_time")
             auto_stop_ts = get_next_auto_stop_ts(active_stop)
-            auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ไม่มีกำหนด"
+            auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)"
             otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
             otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
 
@@ -629,7 +653,12 @@ class OperationsCog(commands.Cog):
             embed.set_footer(text="What Universal • อัปเดตข้อมูลอัตโนมัติ")
             await msg.edit(embed=embed)
         except Exception as e:
-            logger.error(f"[OperationsCog] refresh_status_message_loop error: {e}")
+            logger.error(f"[OperationsCog] update_status_message error: {e}")
+
+    @tasks.loop(seconds=5)
+    async def refresh_status_message_loop(self):
+        """อัปเดต Embed สถานะกำลังพลที่ปฏิบัติการอยู่แบบ Realtime ต่อเนื่อง"""
+        await self.update_status_message()
 
     @tasks.loop(minutes=1)
     async def check_auto_stop_loop(self):
@@ -641,7 +670,11 @@ class OperationsCog(commands.Cog):
 
             now_local = datetime.now(config.timezone)
             now_time_str = now_local.strftime("%H:%M")
-            auto_stop_times = config.get("AUTO_STOP_TIMES", [])
+            raw_stop_times = config.get("AUTO_STOP_TIMES") or DEFAULT_AUTO_STOP_TIMES
+            if isinstance(raw_stop_times, str):
+                auto_stop_times = [x.strip() for x in raw_stop_times.split(",") if x.strip()]
+            else:
+                auto_stop_times = list(raw_stop_times)
             temp_stop = op_status.get("temp_auto_stop")
 
             # ตรวจสอบเวลาหยุด (รอบปกติจาก config หรือรอบที่ตั้งชั่วคราว)
@@ -808,7 +841,7 @@ class OperationsCog(commands.Cog):
 
         now_dt = datetime.now(config.timezone)
         auto_stop_ts = get_next_auto_stop_ts(stop_time)
-        auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)" if auto_stop_ts else "ไม่มีกำหนด"
+        auto_stop_val = f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)"
         otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
         otp_val = f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{otp_ch_id}>" if otp_ch_id else "ดูรหัสที่ห้อง OTP"
 
@@ -916,6 +949,7 @@ class OperationsCog(commands.Cog):
         op_status["temp_auto_stop"] = time
         op_status["stop_time"] = time
         await save_operation_status(op_status)
+        await self.update_status_message()
 
         await self.send_assistant_log(
             "⏰ ตั้งเวลาปิดรอบอัตโนมัติ",
@@ -965,6 +999,7 @@ class OperationsCog(commands.Cog):
 
         del op_status[uid]
         await save_operation_status(op_status)
+        await self.update_status_message()
 
         # ส่ง Personal Log สำหรับ Force Stop
         clean_start = start_str.split(".")[0] if "." in start_str else start_str

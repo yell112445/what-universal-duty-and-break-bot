@@ -55,6 +55,9 @@ class ConfigManager:
                     if k not in self._config:
                         self._config[k] = v
                         updated = True
+                    elif (self._config.get(k) is None or self._config.get(k) == []) and v:
+                        self._config[k] = v
+                        updated = True
                     elif str(self._config.get(k, "")).startswith("147062") and not str(v).startswith("147062"):
                         self._config[k] = v
                         updated = True
