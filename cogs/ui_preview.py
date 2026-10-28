@@ -439,9 +439,9 @@ class UIPreviewCog(commands.Cog):
                 {"name": "สถานะระบบ", "value": "`Active` (เปิดรับลงเวลา)", "inline": True},
                 {"name": "ตัดรอบอัตโนมัติ", "value": f"<t:{auto_stop_ts}:t> (<t:{auto_stop_ts}:R>)", "inline": True},
                 {"name": "รหัส OTP", "value": f"ดูรหัสรอบปัจจุบันได้ที่ห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", "inline": False},
-                {"name": "🛡️ หน่วยปฏิบัติการพิเศษ (SWAT) [1]", "value": f"• {interaction.user.display_name} ({interaction.user.mention}) — <t:{now_ts - 3600}:R>", "inline": False},
-                {"name": "👮 ตำรวจนครบาล (Patrol) [1]", "value": f"• Sarah Connor (<@123456789012345678>) — <t:{now_ts - 1800}:R>", "inline": False},
-                {"name": "✈️ กองบินตำรวจ (Air Support) [1]", "value": f"• Maverick Mitchell (<@234567890123456789>) — <t:{now_ts - 600}:R>", "inline": False}
+                {"name": "หน่วยปฏิบัติการพิเศษ (SWAT) [1]", "value": f"• {interaction.user.display_name} ({interaction.user.mention}) — <t:{now_ts - 3600}:R>", "inline": False},
+                {"name": "ตำรวจนครบาล (Patrol) [1]", "value": f"• Sarah Connor (<@123456789012345678>) — <t:{now_ts - 1800}:R>", "inline": False},
+                {"name": "กองบินตำรวจ (Air Support) [1]", "value": f"• Maverick Mitchell (<@234567890123456789>) — <t:{now_ts - 600}:R>", "inline": False}
             ]
             op_embeds = build_roster_embeds(
                 title="WHAT UNIVERSAL — TIME TRACKER",
