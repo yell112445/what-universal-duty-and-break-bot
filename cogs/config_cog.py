@@ -127,7 +127,7 @@ class ConfigSelectView(View):
             discord.SelectOption(
                 label="ช่อง Welcome Ticket Panel",
                 value="WELCOME_TICKET_CHANNEL_ID",
-                description="Channel ID ของห้องกดรับตั๋ว"
+                description="Channel ID ของห้องกดรับ Ticket"
             ),
             discord.SelectOption(
                 label="ช่อง Join Log สมาชิกเข้าเซิร์ฟ",
@@ -137,7 +137,7 @@ class ConfigSelectView(View):
             discord.SelectOption(
                 label="ช่อง Data Log สรุปข้อมูลผู้เล่น",
                 value="WELCOME_DATA_LOG_CHANNEL_ID",
-                description="Channel ID ห้อง Log ตั๋วที่เสร็จสิ้น"
+                description="Channel ID ห้อง Log Ticket ที่เสร็จสิ้น"
             ),
             discord.SelectOption(
                 label="ช่อง Preview UX/UI สำหรับทดสอบ",

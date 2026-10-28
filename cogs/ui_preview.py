@@ -180,7 +180,7 @@ class CleanOperationView(View):
 
 
 # ==============================================================================
-# 2. Clean Welcome Ticket System (ปุ่มฟ้า/เทา, แดงเฉพาะปิดตั๋ว, เรียลไทม์)
+# 2. Clean Welcome Ticket System (ปุ่มฟ้า/เทา, แดงเฉพาะปิด Ticket, เรียลไทม์)
 # ==============================================================================
 
 WELCOME_BANNER_GIF = "https://media.discordapp.net/attachments/752095905074642945/1341411365839175710/Final.gif?ex=67b5e62f&is=67b494af&hm=79d36fd5a51ec8e8f09ff36628b92d56682a6e359816404b5dd57591530b400f&=&width=578&height=578"
@@ -189,38 +189,38 @@ class CleanCloseConfirmView(View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="ยืนยันปิดตั๋ว", style=discord.ButtonStyle.danger, custom_id="preview_confirm_close_ticket")
+    @discord.ui.button(label="Confirm Close", style=discord.ButtonStyle.danger, custom_id="preview_confirm_close_ticket")
     async def confirm_btn(self, interaction: discord.Interaction, button: Button):
         await interaction.response.send_message(
-            "-# ตั๋วนี้กำลังจะถูกปิดและลบห้องในอีก 5 วินาที...",
+            "-# Ticket นี้กำลังจะถูกปิดและลบห้องในอีก 5 วินาที...",
             ephemeral=True
         )
 
-    @discord.ui.button(label="ยกเลิก", style=discord.ButtonStyle.secondary, custom_id="preview_cancel_close_ticket")
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, custom_id="preview_cancel_close_ticket")
     async def cancel_btn(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.edit_message(content="-# การปิดตั๋วถูกยกเลิกแล้ว ดำเนินการต่อได้ตามปกติ", embed=None, view=None)
+        await interaction.response.edit_message(content="-# ยกเลิกการปิด Ticket แล้ว ดำเนินการต่อได้ตามปกติ", embed=None, view=None)
 
 class CleanCombinedInfoModal(Modal):
     def __init__(self, parent_view: 'CleanTicketInteractiveView'):
-        super().__init__(title="กรอกข้อมูลตัวละคร (IC)")
+        super().__init__(title="Registration (IC)")
         self.parent_view = parent_view
         
         self.fname_input = TextInput(
-            label="ชื่อตัวละคร (First Name)",
+            label="First Name (IC)",
             placeholder="เช่น Jelly",
             default=self.parent_view.first_name or "",
             required=True,
             max_length=30
         )
         self.lname_input = TextInput(
-            label="นามสกุลตัวละคร (Last Name)",
+            label="Last Name (IC)",
             placeholder="เช่น Walk",
             default=self.parent_view.last_name or "",
             required=True,
             max_length=30
         )
         self.phone_input = TextInput(
-            label="เบอร์โทรศัพท์ในเกม (Phone)",
+            label="Phone Number (IC)",
             placeholder="เช่น 123-456 หรือ 555234",
             default=self.parent_view.phone or "",
             required=True,
@@ -256,13 +256,13 @@ class CleanTicketInteractiveView(View):
         self.phone = phone
         self.photo_uploaded = photo_uploaded
 
-        # Row 0: Dropdown แผนก (มีเฉพาะ ตำรวจ และ หมอ ตามแบบเดิม)
+        # Row 0: Dropdown แผนก (มีเฉพาะ ตำรวจ และ หมอ)
         options = [
-            discord.SelectOption(label="ตำรวจ (Police)", value="ตำรวจ", description="หน่วยงานตำรวจนครบาล (WUPD)", default=(role == "ตำรวจ")),
-            discord.SelectOption(label="หมอ (Medic)", value="หมอ", description="หน่วยงานแพทย์ฉุกเฉิน (UMD)", default=(role == "หมอ"))
+            discord.SelectOption(label="Police", value="ตำรวจ", description="ตำรวจนครบาล (WUPD)", default=(role == "ตำรวจ")),
+            discord.SelectOption(label="Medic", value="หมอ", description="หน่วยแพทย์ฉุกเฉิน (UMD)", default=(role == "หมอ"))
         ]
         self.role_select = Select(
-            placeholder="เลือกแผนก (ตำรวจ / หมอ)...",
+            placeholder="Select Department (Police / Medic)...",
             options=options,
             custom_id="clean_ticket_role_select",
             row=0
@@ -273,7 +273,7 @@ class CleanTicketInteractiveView(View):
         # Row 1: ปุ่มทั้งหมดอยู่ในแถวเดียวกัน! สีเทา/ฟ้า/เทา (ไม่มีสีแดงในแถวนี้)
         # ปุ่ม 1: กรอกข้อมูลตัวละคร (สีเทา)
         self.btn_info = Button(
-            label="กรอกข้อมูลตัวละคร",
+            label="Fill Info",
             style=discord.ButtonStyle.secondary,
             custom_id="clean_ticket_fill_info",
             row=1
@@ -283,7 +283,7 @@ class CleanTicketInteractiveView(View):
 
         # ปุ่ม 2: ยืนยันข้อมูล (สีฟ้า / ล็อคจนกว่าจะครบ)
         self.btn_submit = Button(
-            label="รอข้อมูลครบ",
+            label="Pending Info",
             style=discord.ButtonStyle.primary,
             disabled=True,
             custom_id="clean_ticket_submit",
@@ -292,9 +292,9 @@ class CleanTicketInteractiveView(View):
         self.btn_submit.callback = self.submit_callback
         self.add_item(self.btn_submit)
 
-        # ปุ่ม 3: ปิดตั๋ว (สีเทา ในแถวเดียวกัน!)
+        # ปุ่ม 3: ปิด Ticket (สีเทา ในแถวเดียวกัน!)
         self.btn_close = Button(
-            label="ปิดตั๋ว",
+            label="Close Ticket",
             style=discord.ButtonStyle.secondary,
             custom_id="clean_ticket_close",
             row=1
@@ -313,37 +313,37 @@ class CleanTicketInteractiveView(View):
         is_ready = has_info and has_role and photo_ok
 
         self.btn_submit.disabled = not is_ready
-        self.btn_submit.label = "ยืนยันข้อมูล" if is_ready else "รอข้อมูลครบ"
+        self.btn_submit.label = "Submit" if is_ready else "Pending Info"
 
     def build_embed(self) -> discord.Embed:
         c_ice = discord.Color.from_rgb(56, 182, 255)
         embed = discord.Embed(
-            title="ตั๋วลงทะเบียน #0042",
-            description="-# กรุณากรอกข้อมูลให้ครบเพื่อรับยศในเซิร์ฟเวอร์",
+            title="Registration Ticket #0042",
+            description="-# กรุณากรอกข้อมูลให้ครบเพื่อรับ Role",
             color=c_ice
         )
 
-        # 1. แผนก
-        role_text = f"`{self.role}` (เลือกแล้ว)" if self.role else "`ยังไม่ได้เลือก` (เลือกจากเมนูด้านล่าง)"
-        embed.add_field(name="1. แผนก", value=role_text, inline=False)
+        # 1. Department
+        role_text = f"`{self.role}` (Selected)" if self.role else "`None`"
+        embed.add_field(name="1. Department", value=role_text, inline=False)
 
-        # 2. ข้อมูลตัวละคร (IC) - แสดงแยกชื่อ นามสกุล และเบอร์โทรสั้นๆ ในเกม
+        # 2. Character Info (IC)
         if self.first_name and self.last_name:
-            info_text = f"`{self.first_name} {self.last_name}` • เบอร์: `{self.phone or 'ยังไม่ระบุ'}`"
+            info_text = f"`{self.first_name} {self.last_name}` • Phone: `{self.phone or '-'}`"
         else:
-            info_text = "`ยังไม่ได้กรอก` (กดปุ่มกรอกข้อมูลตัวละครด้านล่าง)"
-        embed.add_field(name="2. ข้อมูลตัวละคร (IC)", value=info_text, inline=False)
+            info_text = "`Pending` (กดปุ่ม Fill Info ด้านล่าง)"
+        embed.add_field(name="2. Character Info (IC)", value=info_text, inline=False)
 
-        # 3. รูปถ่าย / สตอรี่
+        # 3. Story / Photo
         if self.role == "หมอ":
             photo_text = "`ไม่ต้องส่งรูป` (ยกเว้นสำหรับหมอ)"
         elif self.photo_uploaded:
-            photo_text = "`แนบรูปแล้ว` (เรียบร้อย)"
+            photo_text = "`Attached` (แนบรูปแล้ว)"
         else:
-            photo_text = "`รอส่งรูป` (แนบรูปส่งในแชทนี้ได้เลย)"
-        embed.add_field(name="3. รูปถ่าย / สตอรี่", value=photo_text, inline=False)
+            photo_text = "`Pending` (แนบรูปส่งในห้องนี้ได้เลย)"
+        embed.add_field(name="3. Story / Photo", value=photo_text, inline=False)
 
-        embed.set_footer(text="เมื่อข้อมูลครบแล้ว ปุ่มยืนยันจะเปิดให้กดอัตโนมัติ")
+        embed.set_footer(text="ระบบจะปลดล็อคปุ่ม Submit อัตโนมัติเมื่อข้อมูลครบ")
         # 2.2 เป็นภาพมุมขวาบน (Thumbnail)
         embed.set_thumbnail(url=WELCOME_BANNER_GIF)
         return embed
@@ -361,15 +361,15 @@ class CleanTicketInteractiveView(View):
 
     async def submit_callback(self, interaction: discord.Interaction):
         await interaction.response.send_message(
-            "**ส่งข้อมูลสำเร็จ**\n-# ระบบได้บันทึกข้อมูลและส่งให้แอดมินเรียบร้อยแล้วครับ",
+            "**Submitted Successfully**\n-# ระบบได้บันทึกข้อมูลและส่งให้แอดมินเรียบร้อยแล้วครับ",
             ephemeral=True
         )
 
     async def close_callback(self, interaction: discord.Interaction):
-        # เมื่อกดปุ่มปิดตั๋ว (สีเทา) -> เด้งถาม Confirm พร้อมปุ่ม "สีแดง"
+        # เมื่อกดปุ่ม Close Ticket (สีเทา) -> เด้งถาม Confirm พร้อมปุ่ม "Confirm Close" สีแดง
         confirm_embed = discord.Embed(
-            title="ยืนยันการปิดตั๋ว",
-            description="คุณแน่ใจหรือไม่ว่าต้องการปิดตั๋วนี้?\nห้องตั๋วและข้อมูลจะถูกลบออกถาวร",
+            title="Confirm Close Ticket",
+            description="คุณต้องการปิด Ticket นี้ใช่หรือไม่?\nห้องนี้และข้อมูลจะถูกลบออกถาวร",
             color=discord.Color.red()
         )
         await interaction.response.send_message(
@@ -515,7 +515,7 @@ class UIPreviewCog(commands.Cog):
             )
 
         # ----------------------------------------------------------------------
-        # 2. Welcome & Ticket Preview (Clean Minimalist — ศัพท์ทั่วไป)
+        # 2. Welcome & Ticket Preview (Clean Minimalist — Modern English)
         # ----------------------------------------------------------------------
         if component in ["all", "welcome"]:
             welcome_panel_embed = discord.Embed(
@@ -523,23 +523,23 @@ class UIPreviewCog(commands.Cog):
                 description=(
                     "-# ระบบลงทะเบียนและยืนยันตัวตนสมาชิกใหม่\n\n"
                     "ยินดีต้อนรับสู่ What Universal\n"
-                    "กดปุ่มด้านล่างเพื่อเปิดตั๋วลงทะเบียนและกรอกข้อมูล"
+                    "กดปุ่ม **Open Ticket** ด้านล่างเพื่อเริ่มลงทะเบียน"
                 ),
                 color=c_slate
             )
-            welcome_panel_embed.set_footer(text="ระบบลงทะเบียนอัตโนมัติ 24 ชม.")
+            welcome_panel_embed.set_footer(text="Automated Registration • 24/7")
             # 2.1 เป็นภาพแนบด้านล่าง (Banner) ไม่ใช่มุมขวาบน
             welcome_panel_embed.set_image(url=WELCOME_BANNER_GIF)
 
             btn_open_ticket = Button(
-                label="เปิดตั๋วลงทะเบียน",
+                label="Open Ticket",
                 style=discord.ButtonStyle.primary
             )
             v_welcome = View()
             v_welcome.add_item(btn_open_ticket)
 
             await target_ch.send(
-                content="### ─── 02.1 แผงกดเปิดตั๋วลงทะเบียน (WELCOME PANEL) ───",
+                content="### ─── 02.1 WELCOME PANEL ───",
                 embed=welcome_panel_embed,
                 view=v_welcome
             )
@@ -554,7 +554,7 @@ class UIPreviewCog(commands.Cog):
             )
 
             await target_ch.send(
-                content="### ─── 02.2 หน้าจอภายในตั๋ว (INSIDE TICKET) ───",
+                content="### ─── 02.2 INSIDE TICKET ───",
                 embed=active_ticket_view.build_embed(),
                 view=active_ticket_view
             )
