@@ -45,44 +45,53 @@ def format_duration(total_seconds: int) -> str:
 def generate_otp() -> str:
     return f"{random.randint(0, 9999):04d}"
 
-DEFAULT_AUTO_STOP_TIMES = ["03:00", "13:52", "18:00", "20:32"]
+DEFAULT_AUTO_STOP_TIMES = ["03:00", "18:00"]
+
+def extract_time_list(raw: Any) -> List[str]:
+    """ดึงรายการเวลา HH:MM ออกมาจาก config ไม่ว่าจะอยู่ในรูป List, String ที่คั่นด้วย comma, slash, space หรือ pipe"""
+    if not raw:
+        return []
+    text = str(raw)
+    matches = re.findall(r"\b(\d{1,2}):(\d{2})\b", text)
+    res = []
+    for h_str, m_str in matches:
+        try:
+            h = int(h_str)
+            m = int(m_str)
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                formatted = f"{h:02d}:{m:02d}"
+                if formatted not in res:
+                    res.append(formatted)
+        except Exception:
+            pass
+    return res
 
 def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> int:
     """คำนวณ Unix Timestamp ของรอบตัดเวลาถัดไปจริง ๆ
     - หากมีการระบุ specific_time (HH:MM) จะคำนวณเวลานั้น
-    - หากไม่มี หรือเป็น None/Empty ให้คำนวณจากตารางเวลาใน config AUTO_STOP_TIMES
-      โดยถ้า config ว่างเปล่า จะใช้ DEFAULT_AUTO_STOP_TIMES ทันที
-    - การันตีคืนค่า int Unix timestamp เสมอ ไม่มีวันคืนค่า None หรือแสดง 'ไม่มีกำหนด'
+    - หากไม่มี หรือเป็น None/Empty ให้คำนวณจากตารางเวลาใน config AUTO_STOP_TIMES (ค่าเริ่มต้น 03:00 และ 18:00)
+    - คำนวณเวลารอบถัดไปที่กำลังจะมาถึงเร็วที่สุดตามเข็มนาฬิกา
     """
     now_dt = datetime.now(config.timezone)
-    if specific_time and str(specific_time).strip().lower() not in ["none", "null", ""]:
-        try:
-            sh, sm = map(int, str(specific_time).strip().split(":"))
+
+    # 1. กรณีระบุ specific_time (เช่น /operation_start stop_time: 15:00)
+    if specific_time:
+        parsed_specific = extract_time_list(specific_time)
+        if parsed_specific:
+            sh, sm = map(int, parsed_specific[0].split(":"))
             stop_dt = now_dt.replace(hour=sh, minute=sm, second=0, microsecond=0)
             if stop_dt <= now_dt:
                 stop_dt += timedelta(days=1)
             return int(stop_dt.timestamp())
-        except Exception:
-            pass
 
-    raw_times = config.get("AUTO_STOP_TIMES")
-    if not raw_times:
-        raw_times = DEFAULT_AUTO_STOP_TIMES
-
-    if isinstance(raw_times, str):
-        auto_stop_times = [x.strip() for x in raw_times.split(",") if x.strip()]
-    elif isinstance(raw_times, (list, tuple)):
-        auto_stop_times = [str(x).strip() for x in raw_times if str(x).strip()]
-    else:
-        auto_stop_times = DEFAULT_AUTO_STOP_TIMES
-
-    if not auto_stop_times:
-        auto_stop_times = DEFAULT_AUTO_STOP_TIMES
+    # 2. คำนวณจาก Config AUTO_STOP_TIMES (รองรับทั้ง ["03:00", "18:00"] และ "03:00 / 18:00")
+    raw_times = config.get("AUTO_STOP_TIMES") or DEFAULT_AUTO_STOP_TIMES
+    auto_stop_times = extract_time_list(raw_times) or DEFAULT_AUTO_STOP_TIMES
 
     cand = []
     for t in auto_stop_times:
         try:
-            th, tm = map(int, t.strip().split(":"))
+            th, tm = map(int, t.split(":"))
             tdt = now_dt.replace(hour=th, minute=tm, second=0, microsecond=0)
             if tdt <= now_dt:
                 tdt += timedelta(days=1)
@@ -94,8 +103,11 @@ def get_next_auto_stop_ts(specific_time: Optional[str] = None) -> int:
         cand.sort()
         return int(cand[0].timestamp())
 
-    # Fallback กรณีสุดวิสัย: 3 ชั่วโมงข้างหน้า
-    return int((now_dt + timedelta(hours=3)).timestamp())
+    # Fallback: 18:00 หรือ 03:00 ของวันพรุ่งนี้
+    fallback_dt = now_dt.replace(hour=18, minute=0, second=0, microsecond=0)
+    if fallback_dt <= now_dt:
+        fallback_dt += timedelta(days=1)
+    return int(fallback_dt.timestamp())
 
 class OTPModal(Modal):
     def __init__(self, opener_id: int):
@@ -671,11 +683,11 @@ class OperationsCog(commands.Cog):
             now_local = datetime.now(config.timezone)
             now_time_str = now_local.strftime("%H:%M")
             raw_stop_times = config.get("AUTO_STOP_TIMES") or DEFAULT_AUTO_STOP_TIMES
-            if isinstance(raw_stop_times, str):
-                auto_stop_times = [x.strip() for x in raw_stop_times.split(",") if x.strip()]
-            else:
-                auto_stop_times = list(raw_stop_times)
+            auto_stop_times = extract_time_list(raw_stop_times) or DEFAULT_AUTO_STOP_TIMES
             temp_stop = op_status.get("temp_auto_stop")
+            if temp_stop:
+                parsed_temp = extract_time_list(temp_stop)
+                temp_stop = parsed_temp[0] if parsed_temp else temp_stop
 
             # ตรวจสอบเวลาหยุด (รอบปกติจาก config หรือรอบที่ตั้งชั่วคราว)
             if now_time_str in auto_stop_times or (temp_stop and now_time_str == temp_stop):

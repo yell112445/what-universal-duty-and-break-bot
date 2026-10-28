@@ -30,7 +30,12 @@ class ConfigEditModal(Modal):
             elif self.value_type == "bool":
                 parsed_val = raw_val.lower() in ["true", "1", "yes", "เปิด", "on"]
             elif self.value_type == "list_str":
-                parsed_val = [x.strip() for x in raw_val.replace(",", " ").split() if x.strip()]
+                if self.key == "AUTO_STOP_TIMES":
+                    import re
+                    matches = re.findall(r"\b(\d{1,2}):(\d{2})\b", raw_val)
+                    parsed_val = [f"{int(h):02d}:{int(m):02d}" for h, m in matches]
+                else:
+                    parsed_val = [x.strip() for x in raw_val.replace(",", " ").replace("/", " ").split() if x.strip()]
             elif self.value_type == "list_int":
                 parsed_val = [int(x.strip()) for x in raw_val.replace(",", " ").split() if x.strip()]
             elif self.value_type == "json":

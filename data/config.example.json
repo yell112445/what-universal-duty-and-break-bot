@@ -27,9 +27,7 @@
   "OTP_EXPIRY_MINUTES": 20,
   "AUTO_STOP_TIMES": [
     "03:00",
-    "13:52",
-    "18:00",
-    "20:32"
+    "18:00"
   ],
   "AUTO_STOP_ANNOUNCE_MINUTES": 10,
   "BUTTON_COOLDOWN_SECONDS": 10,
