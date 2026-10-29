@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from discord.ui import Modal, TextInput, View, Button
 
 from config_manager import config
-from services.storage_service import read_leave_db, write_leave_db, AUTHORIZED_USERS_DIR
+from services.storage_service import read_leave_db, write_leave_db, AUTHORIZED_USERS_DIR, parse_smart_date, sanitize_iso_date
 from services import leave_service
 
 TYPE_MAP = {
@@ -53,7 +53,7 @@ class CleanLeaveRequestModal(Modal):
         self.cog = cog
         self.start_date_input = TextInput(
             label="วันเริ่มลา (Start Date)",
-            placeholder="เช่น วันนี้ หรือ 29/10/2026",
+            placeholder="เช่น วันนี้, พรุ่งนี้, 29/10/2569 หรือ 29/10/2026",
             style=discord.TextStyle.short,
             required=True,
             max_length=20
@@ -82,14 +82,10 @@ class CleanLeaveRequestModal(Modal):
         now_dt = datetime.now(config.timezone)
         today = now_dt.date()
 
-        # แปลงวันที่เริ่มลา
-        if date_str in ["วันนี้", "today"]:
-            req_start_date = today
-        else:
-            try:
-                req_start_date = datetime.strptime(date_str, "%d/%m/%Y").date()
-            except ValueError:
-                return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณาใช้ `วันนี้` หรือ `DD/MM/YYYY` (เช่น 29/10/2026)", ephemeral=True)
+        # แปลงวันที่เริ่มลา ด้วย Smart Date Parser (รองรับ พ.ศ., ค.ศ., ตัวย่อ 2 หลัก, วันนี้, พรุ่งนี้ ฯลฯ)
+        req_start_date = parse_smart_date(date_str, config.timezone)
+        if not req_start_date:
+            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `พรุ่งนี้`, `29/10/2569` หรือ `29/10/2026`", ephemeral=True)
 
         if req_start_date < today:
             return await interaction.followup.send("❌ ไม่สามารถยื่นลาย้อนหลังได้ครับ", ephemeral=True)
@@ -375,9 +371,18 @@ class BreaktimeCog(commands.Cog):
                     st_d = today
                     en_d = today
 
-                member = channel.guild.get_member(int(uid)) if channel.guild and str(uid).isdigit() else None
-                user_name = member.display_name if member else f"User {uid}"
-                name_display = f"{user_name} (<@{uid}>)"
+                name_display = f"<@{uid}>"
+
+                # ปรับปี ค.ศ. / พ.ศ. ให้ถูกต้องเสมอ (ป้องกันปี 3112 จาก พ.ศ. เดิม)
+                if en_d.year > 3000:
+                    en_d = en_d.replace(year=en_d.year - 543 * 2)
+                elif en_d.year >= 2400:
+                    en_d = en_d.replace(year=en_d.year - 543)
+
+                if st_d.year > 3000:
+                    st_d = st_d.replace(year=st_d.year - 543 * 2)
+                elif st_d.year >= 2400:
+                    st_d = st_d.replace(year=st_d.year - 543)
 
                 en_ts = int(datetime.combine(en_d, datetime.min.time(), tzinfo=config.timezone).timestamp())
                 if st_d <= today <= en_d:
@@ -524,11 +529,10 @@ class BreaktimeCog(commands.Cog):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        try:
-            start_dt = datetime.strptime(start_date.strip(), "%d/%m/%Y").date()
-            end_dt = datetime.strptime(end_date.strip(), "%d/%m/%Y").date()
-        except ValueError:
-            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง (ใช้ DD/MM/YYYY)", ephemeral=True)
+        start_dt = parse_smart_date(start_date.strip(), config.timezone)
+        end_dt = parse_smart_date(end_date.strip(), config.timezone)
+        if not start_dt or not end_dt:
+            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
 
         if end_dt < start_dt:
             return await interaction.followup.send("❌ วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่มต้น", ephemeral=True)

@@ -17,6 +17,7 @@ from openpyxl import Workbook
 
 from config_manager import config
 from services.storage_service import (
+    parse_smart_date,
     load_operation_status, save_operation_status,
     load_operation_daily_data, save_operation_session_data,
     OPERATIONS_DIR, DATA_DIR
@@ -485,7 +486,7 @@ class OperationsCog(commands.Cog):
                 embed = discord.Embed(
                     title="TIME LOG — CHECK-IN RECEIPT",
                     description=(
-                        f"**User:** {player_name} (<@{user_id}>)\n"
+                        f"**User:** <@{user_id}>\n"
                         f"• Timestamp: <t:{now_ts}:F>\n"
                         f"• Status: `Online` (เริ่มบันทึกเวลา)\n\n"
                         f"-# บันทึกข้อมูลลงประวัติส่วนบุคคลเรียบร้อยแล้ว"
@@ -503,7 +504,7 @@ class OperationsCog(commands.Cog):
                 embed = discord.Embed(
                     title="TIME LOG — CHECK-OUT RECEIPT",
                     description=(
-                        f"**User:** {player_name} (<@{user_id}>)\n"
+                        f"**User:** <@{user_id}>\n"
                         f"• Check-in: `{start_time}`\n"
                         f"• Check-out: `{end_time}`\n"
                         f"• Duration: `{format_duration(duration) if duration > 0 else '-'}`\n\n"
@@ -657,7 +658,7 @@ class OperationsCog(commands.Cog):
                                 break
 
                     time_display = f"<t:{int(st_dt.timestamp())}:R>" if st_dt else f"`{duration_str}`"
-                    unit_groups[matched_unit].append(f"• {nickname} (<@{k}>) — {time_display}")
+                    unit_groups[matched_unit].append(f"• <@{k}> — {time_display}")
 
             # คำนวณเวลาตัดรอบ
             active_stop = op_status.get("temp_auto_stop") or op_status.get("stop_time")
@@ -930,7 +931,7 @@ class OperationsCog(commands.Cog):
 
         await save_operation_status(op_status)
 
-        desc_log = f"ผู้เปิดรอบ: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลาเริ่ม: `{now_dt.strftime('%H:%M:%S')}`"
+        desc_log = f"ผู้เปิดรอบ: <@{interaction.user.id}>\nเวลาเริ่ม: `{now_dt.strftime('%H:%M:%S')}`"
         if stop_time:
             desc_log += f"\nเวลาปิดรอบที่ตั้งไว้: `{stop_time}` น."
 
@@ -971,7 +972,7 @@ class OperationsCog(commands.Cog):
 
         await self.send_assistant_log(
             "⏰ ตั้งเวลาปิดรอบอัตโนมัติ",
-            f"ผู้ตั้ง: **{interaction.user.display_name}** (<@{interaction.user.id}>)\nเวลาปิด: `{time}` น.",
+            f"ผู้ตั้ง: <@{interaction.user.id}>\nเวลาปิด: `{time}` น.",
             color=discord.Color.blue()
         )
         await interaction.followup.send(f"✅ กำหนดเวลาปิดรอบอัตโนมัติเป็นเวลา `{time}` น. เรียบร้อยแล้ว!", ephemeral=True)
@@ -1032,7 +1033,7 @@ class OperationsCog(commands.Cog):
 
         await self.send_assistant_log(
             "FORCE STOP ISSUED",
-            f"ผู้สั่ง: **{interaction.user.display_name}**\nผู้ถูกสั่ง: **{member.display_name}** (<@{member.id}>)\nรวมเวลา: `{format_duration(duration)}`",
+            f"ผู้สั่ง: <@{interaction.user.id}>\nผู้ถูกสั่ง: <@{member.id}>\nรวมเวลา: `{format_duration(duration)}`",
             color=discord.Color.from_rgb(245, 158, 11)
         )
         await interaction.followup.send(f"✅ บันทึกให้ **{member.display_name}** Check-out เรียบร้อยแล้ว (รวมเวลา: `{format_duration(duration)}`)", ephemeral=True)
@@ -1044,10 +1045,10 @@ class OperationsCog(commands.Cog):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        try:
-            query_date = datetime.strptime(date.strip(), "%d/%m/%Y")
-        except ValueError:
-            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง (ใช้ DD/MM/YYYY)", ephemeral=True)
+        parsed_d = parse_smart_date(date.strip(), config.timezone)
+        if not parsed_d:
+            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
+        query_date = datetime.combine(parsed_d, datetime.min.time())
 
         daily_data = await load_operation_daily_data(query_date)
         if not daily_data:

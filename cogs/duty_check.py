@@ -105,7 +105,7 @@ class DutyCheckCog(commands.Cog):
                             elapsed = (on_duty_dt - last_dt).total_seconds()
                             emb = discord.Embed(
                                 title="⚠️ แจ้งเตือน: เข้าเวรซ้อนกัน",
-                                description=f"ผู้เล่น **{player_name}** (<@{discord_id}>) เข้าเวรซ้อน",
+                                description=f"ผู้เล่น <@{discord_id}> เข้าเวรซ้อน",
                                 color=discord.Color.orange()
                             )
                             emb.add_field(name="เวลาเดิม", value=f"`{last_time_str}`")
@@ -118,7 +118,7 @@ class DutyCheckCog(commands.Cog):
                             if gap > max_gap:
                                 emb = discord.Embed(
                                     title="⚠️ แจ้งเตือน: ออกเวรนานเกินกำหนด",
-                                    description=f"ผู้เล่น **{player_name}** (<@{discord_id}>) ออกเวรนานเกินกำหนด",
+                                    description=f"ผู้เล่น <@{discord_id}> ออกเวรนานเกินกำหนด",
                                     color=discord.Color.red()
                                 )
                                 emb.add_field(name="เวลาออกเวรจริง", value=format_duration(int(gap)))
@@ -241,7 +241,7 @@ class DutyCheckCog(commands.Cog):
                         emb = discord.Embed(
                             title="🔔 แจ้งเตือน: ใกล้ครบกำหนดออกเวรแล้ว",
                             description=(
-                                f"**{pname}** (<@{did}>) ออกเวรมาแล้ว {format_duration(int(elapsed))}\n"
+                                f"<@{did}> ออกเวรมาแล้ว {format_duration(int(elapsed))}\n"
                                 f"กรุณากลับเข้าเวรภายใน **{format_duration(pre_announce_gap)}**"
                             ),
                             color=discord.Color.yellow()
