@@ -65,13 +65,21 @@ class WhatUniversalBot(commands.Bot):
             except Exception as e:
                 logger.error(f"❌ โหลด Cog {cog} ล้มเหลว: {e}", exc_info=True)
 
-        # Sync Slash Commands ทั้งแบบ Guild (อัปเดตทันที) และแบบ Global
+        # ล้างคำสั่ง Global เก่าออกจาก Discord API เพื่อไม่ให้ซ้ำซ้อนกับคำสั่งของ Guild (แก้ปัญหาคำสั่งเบิ้ล 2 ชุด)
+        try:
+            app_id = self.application_id or (self.user.id if self.user else None)
+            if app_id:
+                await self.http.bulk_upsert_global_commands(app_id, payload=[])
+                logger.info("🧹 ล้างคำสั่ง Global เก่าออกจาก Discord API เรียบร้อยแล้ว (ป้องกันคำสั่งซ้ำ)")
+        except Exception as e:
+            logger.warning(f"⚠️ ไม่สามารถล้าง Global commands: {e}")
+
+        # Sync Slash Commands ไปยัง Guild เป้าหมายโดยตรง (อัปเดตทันที ไม่หน่วงเวลา)
         try:
             guild_obj = discord.Object(id=config.guild_id)
             self.tree.copy_global_to(guild=guild_obj)
             synced_guild = await self.tree.sync(guild=guild_obj)
-            synced_global = await self.tree.sync()
-            logger.info(f"⚡ Sync Slash Commands สำเร็จ: Guild {config.guild_id} ({len(synced_guild)} คำสั่ง), Global ({len(synced_global)} คำสั่ง)")
+            logger.info(f"⚡ Sync Slash Commands ไปยัง Guild ID {config.guild_id} สำเร็จ ({len(synced_guild)} คำสั่ง)")
         except Exception as e:
             logger.error(f"⚠️ เกิดข้อผิดพลาดขณะ Sync Slash Commands: {e}")
 

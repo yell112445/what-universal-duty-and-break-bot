@@ -406,8 +406,12 @@ class ConfigCog(commands.Cog):
             res = await self._safe_reload_or_load(c)
             results.append(res)
 
-        # Auto-sync commands
+        # Auto-sync commands (ล้างคำสั่ง Global เก่าทิ้งเพื่อป้องกันคำสั่งเบิ้ลซ้ำซ้อน)
         try:
+            app_id = self.bot.application_id or (self.bot.user.id if self.bot.user else None)
+            if app_id:
+                await self.bot.http.bulk_upsert_global_commands(app_id, payload=[])
+
             guilds_to_sync = set()
             if interaction.guild:
                 guilds_to_sync.add(interaction.guild.id)
@@ -419,20 +423,25 @@ class ConfigCog(commands.Cog):
                 self.bot.tree.copy_global_to(guild=g_obj)
                 await self.bot.tree.sync(guild=g_obj)
 
-            await self.bot.tree.sync()
-            results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์และ Global สำเร็จ")
+            results.append("⚡ `Slash Commands`: ซิงค์คำสั่งระดับ Guild สำเร็จ และล้างชุดคำสั่ง Global ที่ซ้ำซ้อนออกแล้ว")
         except Exception as se:
             results.append(f"⚠️ `Slash Commands`: {se}")
 
         await interaction.followup.send("\n".join(results), ephemeral=True)
 
-    @app_commands.command(name="sync", description="[Admin] ซิงค์ Slash Commands ทั้งหมดเข้า Discord ทันที (ทั้ง Guild และ Global)")
+    @app_commands.command(name="sync", description="[Admin] ซิงค์ Slash Commands เข้า Guild ทันที และล้างคำสั่ง Global ที่ซ้ำซ้อน")
     async def sync_commands(self, interaction: discord.Interaction):
         if not self._check_admin(interaction):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         try:
+            # 1. ล้างคำสั่ง Global เก่าออกจาก Discord API ทั้งหมดเพื่อแก้ปัญหาคำสั่งขึ้นเบิ้ลซ้ำ 2 ชุด
+            app_id = self.bot.application_id or (self.bot.user.id if self.bot.user else None)
+            if app_id:
+                await self.bot.http.bulk_upsert_global_commands(app_id, payload=[])
+
+            # 2. ซิงค์เฉพาะระดับ Guild เพื่อให้คำสั่งแสดงผลชุดเดียวทันที
             guilds_to_sync = set()
             if interaction.guild:
                 guilds_to_sync.add(interaction.guild.id)
@@ -444,13 +453,10 @@ class ConfigCog(commands.Cog):
                 g_obj = discord.Object(id=gid)
                 self.bot.tree.copy_global_to(guild=g_obj)
                 synced = await self.bot.tree.sync(guild=g_obj)
-                synced_details.append(f"• Guild `{gid}`: `{len(synced)}` คำสั่ง")
-
-            global_synced = await self.bot.tree.sync()
-            synced_details.append(f"• Global: `{len(global_synced)}` คำสั่ง")
+                synced_details.append(f"• Guild `{gid}`: `{len(synced)}` คำสั่ง (อัปเดตทันที)")
 
             details_str = "\n".join(synced_details)
-            msg = f"✅ ซิงค์ Slash Commands สำเร็จเรียบร้อยแล้ว!\n{details_str}"
+            msg = f"✅ ซิงค์ Slash Commands สำเร็จ (ล้างคำสั่ง Global ที่ซ้ำซ้อนออกแล้ว):\n{details_str}\n-# หากบน Discord ยังเห็นคำสั่งเบิ้ล ให้กด Restart Discord หรือ Ctrl + R เพื่อเคลียร์แคชของแอป"
             await interaction.followup.send(msg, ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ ซิงค์คำสั่งล้มเหลว: {e}", ephemeral=True)
@@ -475,8 +481,12 @@ class ConfigCog(commands.Cog):
                 res = await self._safe_reload_or_load(c)
                 reload_results.append(res)
 
-            # Auto-sync commands after pull
+            # Auto-sync commands after pull (ล้างคำสั่ง Global เก่าทิ้งเพื่อป้องกันคำสั่งเบิ้ลซ้ำซ้อน)
             try:
+                app_id = self.bot.application_id or (self.bot.user.id if self.bot.user else None)
+                if app_id:
+                    await self.bot.http.bulk_upsert_global_commands(app_id, payload=[])
+
                 guilds_to_sync = set()
                 if interaction.guild:
                     guilds_to_sync.add(interaction.guild.id)
@@ -488,8 +498,7 @@ class ConfigCog(commands.Cog):
                     self.bot.tree.copy_global_to(guild=g_obj)
                     await self.bot.tree.sync(guild=g_obj)
 
-                await self.bot.tree.sync()
-                reload_results.append("⚡ `Slash Commands`: ซิงค์คำสั่งล่าสุดเข้าเซิร์ฟเวอร์และ Global สำเร็จ")
+                reload_results.append("⚡ `Slash Commands`: ซิงค์คำสั่งระดับ Guild สำเร็จ และล้างชุดคำสั่ง Global ที่ซ้ำซ้อนออกแล้ว")
             except Exception as se:
                 reload_results.append(f"⚠️ `Slash Commands`: {se}")
 
