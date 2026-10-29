@@ -46,6 +46,7 @@ async def delete_message_after_delay(message: discord.Message, delay: int = 3600
         pass
 
 WELCOME_BANNER_GIF = "https://media.discordapp.net/attachments/752095905074642945/1341411365839175710/Final.gif?ex=67b5e62f&is=67b494af&hm=79d36fd5a51ec8e8f09ff36628b92d56682a6e359816404b5dd57591530b400f&=&width=578&height=578"
+GOOGLE_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScZseJvMQgMpYzeN-SeqUJYgnznSbbqcuB24xIZP51zQ8MG6w/viewform?usp=sharing&ouid=117385091219907191168"
 
 def build_ticket_embed(ticket: dict, channel_name: str = "") -> discord.Embed:
     role = ticket.get("selected_role")
@@ -75,9 +76,12 @@ def build_ticket_embed(ticket: dict, channel_name: str = "") -> discord.Embed:
     if is_medic:
         photo_text = "`ไม่ต้องส่งรูป` (ยกเว้นสำหรับหมอ)"
     elif has_photo:
-        photo_text = "`Attached` (แนบรูปแล้ว)"
+        photo_text = f"`Attached` (แนบรูปแล้ว)\n🔗 [เปิดดูแบบฟอร์ม Google Form]({GOOGLE_FORM_URL})"
     else:
-        photo_text = "`Pending` (แนบรูปส่งในห้องนี้ได้เลย)"
+        photo_text = (
+            f"🔗 **[คลิกที่นี่เพื่อกรอก Google Form]({GOOGLE_FORM_URL})**\n"
+            f"`Pending` (กรอกฟอร์มแล้วแคปภาพหน้าจอส่งในห้องนี้)"
+        )
     embed.add_field(name="3. Story / Photo", value=photo_text, inline=False)
 
     embed.set_footer(text="ระบบจะปลดล็อคปุ่ม Submit อัตโนมัติเมื่อข้อมูลครบ")
@@ -233,6 +237,10 @@ class WelcomeTicketActiveView(View):
         self.btn_info.callback = self.info_callback
         self.add_item(self.btn_info)
 
+        # Button: Google Form Link
+        self.btn_form = Button(label="Google Form", style=discord.ButtonStyle.link, url=GOOGLE_FORM_URL, row=1)
+        self.add_item(self.btn_form)
+
         # Button 2: Submit / Pending Info
         submit_label = "Submit" if is_ready else "Pending Info"
         self.btn_submit = Button(label=submit_label, style=discord.ButtonStyle.primary, disabled=not is_ready, custom_id="confirm_welcome", row=1)
@@ -283,7 +291,16 @@ class WelcomeTicketActiveView(View):
         ticket["confirmed"] = True
         owner_id = int(ticket["user_id"])
         guild = interaction.guild
-        owner = guild.get_member(owner_id) if guild else None
+        owner = None
+        if isinstance(interaction.user, discord.Member) and interaction.user.id == owner_id:
+            owner = interaction.user
+        elif guild:
+            owner = guild.get_member(owner_id)
+            if not owner:
+                try:
+                    owner = await guild.fetch_member(owner_id)
+                except Exception as e:
+                    logger.warning(f"[Introduction] Could not fetch member {owner_id}: {e}")
 
         if not owner:
             ticket["confirmed"] = False
@@ -293,11 +310,13 @@ class WelcomeTicketActiveView(View):
         # 1. กำหนด Prefix และยศ
         if ticket["selected_role"] == "ตำรวจ":
             prefix = "[WUPD] "
+            # ตำรวจต้องได้รับยศ [1344451915693428909 และ 1334154869556252694]
             p_role = int(config.get("POLICE_ROLE_ID", 1334154869556252694))
             b_role = int(config.get("BEGINNER_ROLE_ID", 1344451915693428909))
-            role_ids = [p_role, b_role]
+            role_ids = [b_role, p_role]
         else:
             prefix = "[UMD] "
+            # หมอต้องได้รับยศ 1334154979866316852
             m_role = int(config.get("MD_ROLE_ID", 1334154979866316852))
             role_ids = [m_role]
 
@@ -306,23 +325,33 @@ class WelcomeTicketActiveView(View):
 
         # 2. เปลี่ยนชื่อ Nickname
         nick_changed = False
-        if guild.me.guild_permissions.manage_nicknames:
-            try:
-                await owner.edit(nick=new_nick[:32])
-                nick_changed = True
-            except Exception as e:
-                logger.warning(f"[Introduction] Could not change nickname for {owner}: {e}")
+        try:
+            await owner.edit(nick=new_nick[:32])
+            nick_changed = True
+        except Exception as e:
+            logger.warning(f"[Introduction] Could not change nickname for {owner}: {e}")
 
-        # 3. มอบยศ Roles
+        # 3. มอบยศ Roles อย่างแม่นยำ (Fetch หากไม่อยู่ใน Cache และรายงานผลชัดเจน)
         roles_assigned = []
-        if guild.me.guild_permissions.manage_roles:
-            to_add = [guild.get_role(rid) for rid in role_ids if guild.get_role(rid)]
-            if to_add:
+        failed_roles = []
+        for rid in role_ids:
+            role = guild.get_role(rid)
+            if not role:
                 try:
-                    await owner.add_roles(*to_add, reason="Welcome Ticket Completion")
-                    roles_assigned = [r.name for r in to_add]
+                    role = await guild.fetch_role(rid)
+                except Exception:
+                    pass
+
+            if role:
+                try:
+                    await owner.add_roles(role, reason="Welcome Ticket Completion")
+                    roles_assigned.append(role.name)
                 except Exception as e:
-                    logger.warning(f"[Introduction] Could not add roles to {owner}: {e}")
+                    logger.error(f"[Introduction] Failed to add role {role.name} ({role.id}) to {owner}: {e}")
+                    failed_roles.append(f"{role.name} (ติดปัญหา Hierarchy/สิทธิ์บอท: {e})")
+            else:
+                failed_roles.append(f"Role ID {rid} (ไม่พบยศในเซิร์ฟเวอร์)")
+                logger.error(f"[Introduction] Role ID {rid} not found in guild {guild.id}")
 
         # 4. ส่งรูปภาพและ Log เข้าห้อง Welcome Data Log (Dossier)
         log_ch_id = config.get("WELCOME_DATA_LOG_CHANNEL_ID")
@@ -376,7 +405,15 @@ class WelcomeTicketActiveView(View):
         del data["tickets"][ticket_id]
         await save_welcome_tickets(data)
 
-        res_msg = f"🎉 ยืนยันข้อมูลสำเร็จ! เปลี่ยนชื่อเป็น `{new_nick}` และมอบยศเรียบร้อยแล้ว\n-# Ticket นี้จะถูกปิดและลบห้องอัตโนมัติใน 10 วินาที"
+        reply_parts = [f"🎉 ยืนยันข้อมูลสำเร็จ! เปลี่ยนชื่อเป็น `{new_nick}` เรียบร้อยแล้ว"]
+        if roles_assigned:
+            reply_parts.append(f"✅ **มอบยศสำเร็จ:** {', '.join(roles_assigned)}")
+        if failed_roles:
+            reply_parts.append(f"⚠️ **ไม่สามารถมอบยศบางส่วนได้:**\n• " + "\n• ".join(failed_roles))
+            reply_parts.append("-# 👉 คำแนะนำ: หากติดปัญหา Hierarchy กรุณาให้ Admin ลากยศของบอทให้อยู่ **เหนือ** ยศดังกล่าวใน Server Settings > Roles")
+        reply_parts.append("-# Ticket นี้จะถูกปิดและลบห้องอัตโนมัติใน 10 วินาที")
+
+        res_msg = "\n".join(reply_parts)
         await interaction.followup.send(res_msg, ephemeral=True)
         asyncio.create_task(delete_channel_after_delay(interaction.channel, delay=10))
 
@@ -391,6 +428,12 @@ class WelcomeTicketActiveView(View):
 class WelcomeTicketPanelControlView(View):
     def __init__(self):
         super().__init__(timeout=None)
+        self.add_item(Button(
+            label="Google Form (แบบฟอร์ม)",
+            style=discord.ButtonStyle.link,
+            url=GOOGLE_FORM_URL,
+            row=0
+        ))
 
     def is_ticket_admin(self, user: discord.Member) -> bool:
         if config.is_owner(user.id):
@@ -622,7 +665,8 @@ class IntroductionCog(commands.Cog):
             title="WHAT UNIVERSAL — REGISTRATION",
             description=(
                 "-# ระบบลงทะเบียนและยืนยันตัวตนสมาชิกใหม่\n\n"
-                "ยินดีต้อนรับสู่ What Universal\n"
+                "ยินดีต้อนรับสู่ What Universal\n\n"
+                f"📝 **แบบฟอร์มลงทะเบียน:** [คลิกที่นี่เพื่อกรอก Google Form]({GOOGLE_FORM_URL})\n\n"
                 "กดปุ่ม **Open Ticket** ด้านล่างเพื่อเริ่มลงทะเบียน"
             ),
             color=discord.Color.from_rgb(47, 49, 54)

@@ -388,6 +388,21 @@ class CleanLeavePanelView(View):
         embed.add_field(name="โควตาวันนี้", value="`2 / 5` คน (ว่าง 3 ที่)", inline=True)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+    @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.success, custom_id="clean_leave_return")
+    async def return_duty_button(self, interaction: discord.Interaction, button: Button):
+        embed = discord.Embed(
+            title="✅ บันทึกการกลับเข้าเวรสำเร็จ (ตัวอย่าง)",
+            description=(
+                f"ยินดีต้อนรับกลับเข้าสู่การปฏิบัติหน้าที่!\n\n"
+                f"• **เจ้าหน้าที่:** {interaction.user.mention}\n"
+                f"• **ผู้รับเข้าเวร:** `ผกก.สมชาย`\n"
+                f"• **เวลาที่กลับเข้าเวร:** <t:{int(datetime.now().timestamp())}:F>\n\n"
+                f"-# สถานะการลาของคุณถูกปรับเป็นเสร็จสิ้น (COMPLETED) เรียบร้อยแล้ว"
+            ),
+            color=discord.Color.from_rgb(46, 204, 113)
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 
 # ==============================================================================
 # UI Preview Cog

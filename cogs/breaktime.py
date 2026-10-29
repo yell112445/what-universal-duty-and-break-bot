@@ -192,6 +192,45 @@ class CleanLeaveRequestModal(Modal):
             ephemeral=True
         )
 
+class CleanReturnToDutyModal(Modal):
+    def __init__(self, cog: 'BreaktimeCog'):
+        super().__init__(title="ยืนยันการกลับเข้าเวร")
+        self.cog = cog
+        self.officer_input = TextInput(
+            label="ชื่อผู้รับเข้าเวร (Confirming Officer)",
+            placeholder="เช่น ผกก.สมชาย / ชื่อในเกมของเจ้าหน้าที่ผู้รับเข้าเวร",
+            style=discord.TextStyle.short,
+            required=True,
+            min_length=2,
+            max_length=50
+        )
+        self.add_item(self.officer_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        user_id = str(interaction.user.id)
+        officer_name = self.officer_input.value.strip()
+
+        is_success, reason = await leave_service.process_return_to_duty(user_id, officer_name)
+        if is_success:
+            now_ts = int(datetime.now().timestamp())
+            embed = discord.Embed(
+                title="✅ บันทึกการกลับเข้าเวรสำเร็จ",
+                description=(
+                    f"ยินดีต้อนรับกลับเข้าสู่การปฏิบัติหน้าที่!\n\n"
+                    f"• **เจ้าหน้าที่:** {interaction.user.mention}\n"
+                    f"• **ผู้รับเข้าเวร:** `{officer_name}`\n"
+                    f"• **เวลาที่กลับเข้าเวร:** <t:{now_ts}:F> (<t:{now_ts}:R>)\n\n"
+                    f"-# สถานะการลาของคุณถูกปรับเป็นเสร็จสิ้น (COMPLETED) และปลดสถานะลาออกจากระบบเรียบร้อยแล้ว"
+                ),
+                color=discord.Color.from_rgb(46, 204, 113)
+            )
+            embed.set_footer(text="What Universal Leave System")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            await self.cog.update_leave_board()
+        else:
+            await interaction.followup.send(f"❌ **ล้มเหลว:** {reason}", ephemeral=True)
+
 class CleanLeaveBoardView(View):
     def __init__(self, cog: Optional['BreaktimeCog'] = None):
         super().__init__(timeout=None)
@@ -245,6 +284,17 @@ class CleanLeaveBoardView(View):
         embed.set_footer(text="What Universal Leave System")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    # ปุ่ม 3: เขียว (Success) - กลับเข้าเวร
+    @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.success, custom_id="return_to_duty", row=0)
+    async def return_duty_button(self, interaction: discord.Interaction, button: Button):
+        user_id = str(interaction.user.id)
+        is_success, reason = await leave_service.perform_return_pre_check(user_id)
+        if not is_success:
+            return await interaction.response.send_message(f"❌ **ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
+
+        cog = self.cog or interaction.client.get_cog("BreaktimeCog")
+        await interaction.response.send_modal(CleanReturnToDutyModal(cog))
+
 class LeaveTypeView(View):
     """View ดั้งเดิมสำหรับความเข้ากันได้ย้อนหลัง 100%"""
     def __init__(self, cog: Optional['BreaktimeCog'] = None):
@@ -261,9 +311,15 @@ class LeaveTypeView(View):
         view = CleanLeaveBoardView(self.cog)
         await view.check_button.callback(view, interaction)
 
-    @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.secondary, custom_id="return_to_duty")
+    @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.secondary, custom_id="legacy_return_to_duty")
     async def legacy_return(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("สถานะระบบลาถูกปรับปรุงเป็นระบบโควตาวันลาเรียบร้อยแล้ว ไม่จำเป็นต้องกดกลับเข้าเวรครับ", ephemeral=True)
+        user_id = str(interaction.user.id)
+        is_success, reason = await leave_service.perform_return_pre_check(user_id)
+        if not is_success:
+            return await interaction.response.send_message(f"❌ **ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
+
+        cog = self.cog or interaction.client.get_cog("BreaktimeCog")
+        await interaction.response.send_modal(CleanReturnToDutyModal(cog))
 
 class BreaktimeCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
