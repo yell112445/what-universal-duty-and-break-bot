@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import subprocess
+import importlib
 from datetime import datetime
 from typing import Optional, Any
 import discord
@@ -371,6 +372,20 @@ class ConfigCog(commands.Cog):
     async def set_config_key_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
         return await self._key_autocomplete(interaction, current)
 
+    def _reload_shared_modules(self) -> list[str]:
+        """รีโหลดโมดูล services, config_manager, และ helpers ใน sys.modules เพื่อให้โค้ดใหม่ที่มีการเปลี่ยนแปลงถูกนำมาใช้งานทันที"""
+        reloaded = []
+        for mod_name in list(sys.modules.keys()):
+            if mod_name.startswith("services.") or mod_name == "config_manager":
+                try:
+                    mod = sys.modules.get(mod_name)
+                    if mod:
+                        importlib.reload(mod)
+                        reloaded.append(mod_name)
+                except Exception as e:
+                    logger.warning(f"[ConfigCog] Error reloading {mod_name}: {e}")
+        return reloaded
+
     async def _safe_reload_or_load(self, cog_name: str) -> str:
         """รีโหลดโมดูลอย่างปลอดภัย หรือโหลดเพิ่มทันทีหากเป็นโมดูลใหม่ที่เพิ่งถูกดึงเข้ามา"""
 
@@ -403,6 +418,10 @@ class ConfigCog(commands.Cog):
             return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+
+        # รีโหลดโมดูล services / shared modules ก่อน เพื่อให้ cogs โหลดฟังก์ชันใหม่ได้
+        self._reload_shared_modules()
+
         cogs_to_reload = (
             ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.ui_preview", "cogs.breaktime", "cogs.duty_check"]
             if cog_name == "all" else [cog_name]
@@ -482,6 +501,9 @@ class ConfigCog(commands.Cog):
             )
             stdout, stderr = await proc.communicate()
             out_str = stdout.decode().strip() or stderr.decode().strip()
+
+            # รีโหลดโมดูล services / shared modules ก่อน เพื่อให้ cogs โหลดฟังก์ชันใหม่ได้
+            self._reload_shared_modules()
 
             reload_results = []
             for c in ["cogs.config_cog", "cogs.operations", "cogs.introduction", "cogs.ui_preview", "cogs.breaktime", "cogs.duty_check"]:
