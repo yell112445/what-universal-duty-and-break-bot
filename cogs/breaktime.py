@@ -139,6 +139,7 @@ class CleanLeaveRequestModal(Modal):
 
         # บันทึกลงฐานข้อมูล
         new_record = {
+            "record_id": f"L{len(records) + 1001}",
             "user_id": user_id,
             "user_name": clean_name(interaction.user.display_name),
             "leave_type": "GENERAL",
@@ -227,6 +228,136 @@ class CleanReturnToDutyModal(Modal):
         else:
             await interaction.followup.send(f"❌ **ล้มเหลว:** {reason}", ephemeral=True)
 
+class ConfirmCancelLeaveView(View):
+    """View สำหรับยืนยันการยกเลิกการลางาน (พร้อมปุ่มยืนยันและปุ่มยกเลิก)"""
+    def __init__(self, cog: Optional['BreaktimeCog'], user_id: str, leave_record: dict):
+        super().__init__(timeout=60)
+        self.cog = cog
+        self.user_id = user_id
+        self.leave_record = leave_record
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if str(interaction.user.id) != str(self.user_id):
+            await interaction.response.send_message("❌ คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="ยืนยันยกเลิกลา", style=discord.ButtonStyle.danger, emoji="✅")
+    async def confirm_button(self, interaction: discord.Interaction, button: Button):
+        await interaction.response.defer(ephemeral=True)
+        is_admin = config.is_admin(interaction.user.id)
+
+        is_success, msg = await leave_service.cancel_leave_request(
+            user_id_requesting=self.user_id,
+            user_id_to_cancel=self.user_id,
+            is_admin=is_admin,
+            allow_active=True
+        )
+
+        if is_success:
+            cog = self.cog or interaction.client.get_cog("BreaktimeCog")
+            if cog:
+                await cog.update_leave_board()
+
+            # ส่ง Audit Log เข้าห้อง LOG_CHANNEL_ID
+            log_ch_id = config.get("LOG_CHANNEL_ID")
+            if log_ch_id:
+                try:
+                    log_ch = interaction.client.get_channel(int(log_ch_id))
+                    if log_ch:
+                        audit_emb = discord.Embed(
+                            title="AUDIT LOG — LEAVE REQUEST CANCELLED",
+                            description=f"ผู้ใช้งานกดยกเลิกการลาของตนเองเรียบร้อยแล้ว",
+                            color=discord.Color.from_rgb(237, 66, 69),
+                            timestamp=datetime.now(config.timezone)
+                        )
+                        audit_emb.add_field(name="User", value=f"<@{self.user_id}>", inline=True)
+                        audit_emb.add_field(name="Record ID", value=f"`{self.leave_record.get('record_id', '-')}`", inline=True)
+                        audit_emb.add_field(name="Period", value=f"`{self.leave_record.get('start_date')}` ถึง `{self.leave_record.get('end_date')}`", inline=False)
+                        audit_emb.set_footer(text="Leave Registry Audit")
+                        await log_ch.send(embed=audit_emb)
+                except Exception:
+                    pass
+
+            success_embed = discord.Embed(
+                title="✅ ยกเลิกการลางานสำเร็จ",
+                description=(
+                    f"**ผู้ใช้งาน:** <@{self.user_id}>\n"
+                    f"• รหัสใบลา: `{self.leave_record.get('record_id', '-')}`\n"
+                    f"• ช่วงเวลา: `{self.leave_record.get('start_date')}` ถึง `{self.leave_record.get('end_date')}`\n\n"
+                    f"🎉 ระบบได้ทำการยกเลิกใบลาและคืนโควตาวันลาของคุณกลับสู่ระบบเรียบร้อยแล้วครับ"
+                ),
+                color=discord.Color.from_rgb(46, 204, 113)
+            )
+            success_embed.set_footer(text="What Universal Leave System")
+            await interaction.edit_original_response(embed=success_embed, view=None)
+        else:
+            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+
+    @discord.ui.button(label="ไม่ยกเลิก / ปิด", style=discord.ButtonStyle.secondary, emoji="❌")
+    async def cancel_button(self, interaction: discord.Interaction, button: Button):
+        cancel_embed = discord.Embed(
+            title="ยกเลิกการทำรายการ",
+            description="คำขอลางานของคุณยังคงมีผลตามปกติ ไม่มีการเปลี่ยนแปลงข้อมูลใด ๆ ครับ",
+            color=discord.Color.from_rgb(149, 165, 166)
+        )
+        await interaction.response.edit_message(embed=cancel_embed, view=None)
+
+class LeaveStatusCheckView(View):
+    """View แสดงในหน้าเช็คสิทธิ์ (มีปุ่มกดยกเลิกลา หากมีใบลาค้างอยู่)"""
+    def __init__(self, cog: Optional['BreaktimeCog'], user_id: str, leave_record: dict):
+        super().__init__(timeout=120)
+        self.cog = cog
+        self.user_id = user_id
+        self.leave_record = leave_record
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if str(interaction.user.id) != str(self.user_id):
+            await interaction.response.send_message("❌ คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="ยกเลิกลา", style=discord.ButtonStyle.danger, emoji="🗑️")
+    async def cancel_leave_flow_button(self, interaction: discord.Interaction, button: Button):
+        st_d = self.leave_record.get("start_date", "-")
+        en_d = self.leave_record.get("end_date", "-")
+        reason = self.leave_record.get("reason", "ไม่มีการระบุ")
+        rec_id = self.leave_record.get("record_id", "-")
+
+        period_display = f"`{st_d}` ถึง `{en_d}`"
+        try:
+            st_obj = date.fromisoformat(st_d)
+            en_obj = date.fromisoformat(en_d)
+            if st_obj.year > 3000:
+                st_obj = st_obj.replace(year=st_obj.year - 543 * 2)
+            elif st_obj.year >= 2400:
+                st_obj = st_obj.replace(year=st_obj.year - 543)
+            if en_obj.year > 3000:
+                en_obj = en_obj.replace(year=en_obj.year - 543 * 2)
+            elif en_obj.year >= 2400:
+                en_obj = en_obj.replace(year=en_obj.year - 543)
+            st_ts = int(datetime.combine(st_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+            en_ts = int(datetime.combine(en_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+            period_display = f"<t:{st_ts}:D> — <t:{en_ts}:D>"
+        except Exception:
+            pass
+
+        confirm_embed = discord.Embed(
+            title="⚠️ ยืนยันการยกเลิกการลางาน",
+            description=(
+                f"คุณแน่ใจหรือไม่ว่าต้องการยกเลิกคำขอลางานนี้?\n\n"
+                f"• **ผู้ใช้งาน:** <@{self.user_id}>\n"
+                f"• **รหัสใบลา:** `{rec_id}`\n"
+                f"• **ช่วงเวลา:** {period_display}\n"
+                f"• **เหตุผลเดิม:** `{reason}`\n\n"
+                f"⚠️ **หมายเหตุ:** หากยืนยันแล้ว คำขอลานี้จะถูกยกเลิกทันที และระบบจะคืนโควตาวันลาของคุณกลับสู่ระบบ"
+            ),
+            color=discord.Color.from_rgb(237, 66, 69)
+        )
+        confirm_embed.set_footer(text="What Universal Leave System")
+        confirm_view = ConfirmCancelLeaveView(self.cog, self.user_id, self.leave_record)
+        await interaction.response.edit_message(embed=confirm_embed, view=confirm_view)
+
 class CleanLeaveBoardView(View):
     def __init__(self, cog: Optional['BreaktimeCog'] = None):
         super().__init__(timeout=None)
@@ -255,30 +386,77 @@ class CleanLeaveBoardView(View):
                 try:
                     r_st = date.fromisoformat(r["start_date"])
                     r_en = date.fromisoformat(r["end_date"])
+                    if r_st.year > 3000:
+                        r_st = r_st.replace(year=r_st.year - 543 * 2)
+                    elif r_st.year >= 2400:
+                        r_st = r_st.replace(year=r_st.year - 543)
+                    if r_en.year > 3000:
+                        r_en = r_en.replace(year=r_en.year - 543 * 2)
+                    elif r_en.year >= 2400:
+                        r_en = r_en.replace(year=r_en.year - 543)
+
                     if r_st <= today <= r_en:
                         today_count += 1
-                        if r.get("user_id") == user_id:
-                            user_active_leave = r
                 except Exception:
                     pass
+
+                if r.get("user_id") == user_id:
+                    user_active_leave = r
 
         embed = discord.Embed(
             title="สิทธิ์การลางานของคุณ",
             description=f"**ผู้ใช้งาน:** {interaction.user.mention}\n-# ตรวจสอบโควตาและสถานะการลา",
             color=discord.Color.from_rgb(88, 101, 242)
         )
+
+        reply_view = None
+        cog = self.cog or interaction.client.get_cog("BreaktimeCog")
         if user_active_leave:
-            end_d = user_active_leave.get("end_date", "-")
-            rem = (date.fromisoformat(end_d) - today).days if end_d != "-" else 0
-            embed.add_field(name="สถานะของคุณ", value=f"`กำลังลา` (สิ้นสุด `{end_d}` เหลือ {max(0, rem)} วัน)", inline=False)
+            st_d = user_active_leave.get("start_date", "-")
+            en_d = user_active_leave.get("end_date", "-")
+            reason = user_active_leave.get("reason", "ไม่มีการระบุ")
+            rec_id = user_active_leave.get("record_id", "-")
+
+            date_str = f"`{st_d}` ถึง `{en_d}`"
+            rem_str = ""
+            try:
+                st_obj = date.fromisoformat(st_d)
+                en_obj = date.fromisoformat(en_d)
+                if st_obj.year > 3000:
+                    st_obj = st_obj.replace(year=st_obj.year - 543 * 2)
+                elif st_obj.year >= 2400:
+                    st_obj = st_obj.replace(year=st_obj.year - 543)
+                if en_obj.year > 3000:
+                    en_obj = en_obj.replace(year=en_obj.year - 543 * 2)
+                elif en_obj.year >= 2400:
+                    en_obj = en_obj.replace(year=en_obj.year - 543)
+                st_ts = int(datetime.combine(st_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                en_ts = int(datetime.combine(en_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                date_str = f"<t:{st_ts}:D> — <t:{en_ts}:D>"
+                rem = max(0, (en_obj - today).days + 1)
+                rem_str = f"(เหลืออีก `{rem}` วัน)"
+            except Exception:
+                pass
+
+            status_display = "🔴 **กำลังลา**" if user_active_leave.get("status") == "ON_LEAVE" else "⏳ **ครบกำหนดลารอกลับเข้าเวร**"
+            embed.add_field(
+                name="สถานะของคุณ",
+                value=f"{status_display}\n• **ช่วงเวลา:** {date_str} {rem_str}\n• **เหตุผล:** `{reason}`\n• **รหัสใบลา:** `{rec_id}`",
+                inline=False
+            )
+            reply_view = LeaveStatusCheckView(cog, user_id, user_active_leave)
         else:
-            embed.add_field(name="สถานะของคุณ", value="`ปกติ` (สามารถยื่นลาได้)", inline=True)
+            embed.add_field(name="สถานะของคุณ", value="🟢 `ปกติ` (ไม่มีใบลาค้างอยู่ในระบบ สามารถยื่นลาได้)", inline=False)
 
         rem_quota = max(0, max_quota - today_count)
         embed.add_field(name="โควตาวันนี้", value=f"`{today_count} / {max_quota}` คน (ว่าง {rem_quota} ที่)", inline=True)
         embed.add_field(name="เพดานและเงื่อนไขการลา", value="• โควตาสูงสุด: วันละไม่เกิน `5` คน (ห้ามเกิน)\n• ระยะเวลาลา: สูงสุดไม่เกิน `7` วันต่อครั้ง", inline=False)
         embed.set_footer(text="What Universal Leave System")
-        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        if reply_view:
+            await interaction.followup.send(embed=embed, view=reply_view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ปุ่ม 3: เขียว (Success) - กลับเข้าเวร
     @discord.ui.button(label="กลับเข้าเวร", style=discord.ButtonStyle.success, custom_id="return_to_duty", row=0)
@@ -510,7 +688,8 @@ class BreaktimeCog(commands.Cog):
         is_success, reason = await leave_service.cancel_leave_request(
             user_id_requesting=str(interaction.user.id),
             user_id_to_cancel=target_id,
-            is_admin=is_admin
+            is_admin=is_admin,
+            allow_active=True
         )
         if is_success:
             await interaction.followup.send(f"✅ {reason}", ephemeral=True)

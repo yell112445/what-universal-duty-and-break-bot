@@ -301,7 +301,7 @@ async def process_leave_request(user_id: str, request_start_date: date, duration
 
     return (True, f"อนุมัติสำเร็จ! (สถานะ: ON_LEAVE / รหัสใบลา: `{new_record['record_id']}`)")
 
-async def cancel_leave_request(user_id_requesting: str, user_id_to_cancel: str, is_admin: bool) -> Tuple[bool, str]:
+async def cancel_leave_request(user_id_requesting: str, user_id_to_cancel: str, is_admin: bool, allow_active: bool = False) -> Tuple[bool, str]:
     all_data = await read_leave_db()
     all_records = all_data.get("leave_records", [])
     user_data = all_data.get("user_data", {})
@@ -316,10 +316,14 @@ async def cancel_leave_request(user_id_requesting: str, user_id_to_cancel: str, 
     today = datetime.now(config.timezone).date()
     try:
         start_date_obj = date.fromisoformat(record_to_cancel["start_date"])
+        if start_date_obj.year > 3000:
+            start_date_obj = start_date_obj.replace(year=start_date_obj.year - 543 * 2)
+        elif start_date_obj.year >= 2400:
+            start_date_obj = start_date_obj.replace(year=start_date_obj.year - 543)
     except Exception:
         start_date_obj = today
 
-    if not is_admin and start_date_obj <= today and record_to_cancel.get("status") == "ON_LEAVE":
+    if not is_admin and not allow_active and start_date_obj <= today and record_to_cancel.get("status") == "ON_LEAVE":
         return (False, f"ไม่สามารถยกเลิกได้! ใบลา `{record_to_cancel.get('record_id')}` ได้เริ่มขึ้นแล้ว (Admin เท่านั้นที่ยกเลิกได้)")
 
     record_to_cancel["status"] = "CANCELLED"
@@ -333,7 +337,8 @@ async def cancel_leave_request(user_id_requesting: str, user_id_to_cancel: str, 
     if not await write_leave_db(all_data):
         return (False, "ระบบขัดข้อง: บันทึกการยกเลิกล้มเหลว")
 
-    return (True, f"ยกเลิกการลา (ID: `{record_to_cancel.get('record_id')}`) ของ <@{user_id_to_cancel}> สำเร็จ!")
+    rec_id_str = f" (ID: `{record_to_cancel.get('record_id')}`)" if record_to_cancel.get('record_id') else ""
+    return (True, f"ยกเลิกการลา{rec_id_str} ของ <@{user_id_to_cancel}> สำเร็จ!")
 
 async def process_bypass_leave(admin_id: str, user_id: str, request_start_date: date, request_end_date: date) -> Tuple[bool, str]:
     all_data = await read_leave_db()
