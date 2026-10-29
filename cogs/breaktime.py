@@ -231,7 +231,7 @@ class CleanReturnToDutyModal(Modal):
 class ConfirmCancelLeaveView(View):
     """View สำหรับยืนยันการยกเลิกการลางาน (พร้อมปุ่มยืนยันและปุ่มยกเลิก)"""
     def __init__(self, cog: Optional['BreaktimeCog'], user_id: str, leave_record: dict):
-        super().__init__(timeout=60)
+        super().__init__(timeout=180)
         self.cog = cog
         self.user_id = user_id
         self.leave_record = leave_record
@@ -306,7 +306,7 @@ class ConfirmCancelLeaveView(View):
 class LeaveStatusCheckView(View):
     """View แสดงในหน้าเช็คสิทธิ์ (มีปุ่มกดยกเลิกลา หากมีใบลาค้างอยู่)"""
     def __init__(self, cog: Optional['BreaktimeCog'], user_id: str, leave_record: dict):
-        super().__init__(timeout=120)
+        super().__init__(timeout=300)
         self.cog = cog
         self.user_id = user_id
         self.leave_record = leave_record
@@ -366,6 +366,39 @@ class CleanLeaveBoardView(View):
     # ปุ่ม 1: ฟ้า (Primary) - ยื่นลา
     @discord.ui.button(label="ยื่นลา", style=discord.ButtonStyle.primary, custom_id="breaktime_request_leave", row=0)
     async def request_button(self, interaction: discord.Interaction, button: Button):
+        all_data = await read_leave_db()
+        records = all_data.get("leave_records", [])
+        user_id = str(interaction.user.id)
+        active_rec = leave_service.find_active_record(records, user_id)
+        if active_rec:
+            st_d = active_rec.get("start_date", "-")
+            en_d = active_rec.get("end_date", "-")
+            period_str = f"`{st_d}` ถึง `{en_d}`"
+            try:
+                st_obj = date.fromisoformat(st_d)
+                en_obj = date.fromisoformat(en_d)
+                if st_obj.year > 3000:
+                    st_obj = st_obj.replace(year=st_obj.year - 543 * 2)
+                elif st_obj.year >= 2400:
+                    st_obj = st_obj.replace(year=st_obj.year - 543)
+                if en_obj.year > 3000:
+                    en_obj = en_obj.replace(year=en_obj.year - 543 * 2)
+                elif en_obj.year >= 2400:
+                    en_obj = en_obj.replace(year=en_obj.year - 543)
+                st_ts = int(datetime.combine(st_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                en_ts = int(datetime.combine(en_obj, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                period_str = f"<t:{st_ts}:D> — <t:{en_ts}:D>"
+            except Exception:
+                pass
+
+            return await interaction.response.send_message(
+                f"❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว**\n"
+                f"• **ช่วงเวลา:** {period_str}\n"
+                f"• **รหัสใบลา:** `{active_rec.get('record_id', '-')}`\n\n"
+                f"-# คุณไม่สามารถยื่นลาซ้ำได้ หากต้องการยกเลิกการลาเดิม กรุณากดปุ่ม **'เช็คสิทธิ์'** แล้วกดยกเลิกลาครับ",
+                ephemeral=True
+            )
+
         cog = self.cog or interaction.client.get_cog("BreaktimeCog")
         await interaction.response.send_modal(CleanLeaveRequestModal(cog))
 
@@ -400,7 +433,7 @@ class CleanLeaveBoardView(View):
                 except Exception:
                     pass
 
-                if r.get("user_id") == user_id:
+                if str(r.get("user_id")) == user_id:
                     user_active_leave = r
 
         embed = discord.Embed(
@@ -477,6 +510,15 @@ class LeaveTypeView(View):
 
     @discord.ui.button(label="ยื่นคำขอลางาน", style=discord.ButtonStyle.primary, custom_id="leave_3_4")
     async def legacy_l3_4(self, interaction: discord.Interaction, button: Button):
+        all_data = await read_leave_db()
+        records = all_data.get("leave_records", [])
+        user_id = str(interaction.user.id)
+        active_rec = leave_service.find_active_record(records, user_id)
+        if active_rec:
+            return await interaction.response.send_message(
+                "❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
+                ephemeral=True
+            )
         cog = self.cog or interaction.client.get_cog("BreaktimeCog")
         await interaction.response.send_modal(CleanLeaveRequestModal(cog))
 
@@ -676,6 +718,15 @@ class BreaktimeCog(commands.Cog):
 
     @app_commands.command(name="leave", description="เริ่มต้นกระบวนการขอลางาน")
     async def leave_command(self, interaction: discord.Interaction):
+        all_data = await read_leave_db()
+        records = all_data.get("leave_records", [])
+        user_id = str(interaction.user.id)
+        active_rec = leave_service.find_active_record(records, user_id)
+        if active_rec:
+            return await interaction.response.send_message(
+                "❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
+                ephemeral=True
+            )
         await interaction.response.send_modal(CleanLeaveRequestModal(self))
 
     @app_commands.command(name="cancel_leave", description="ยกเลิกการลาของตนเอง หรือ [Admin] ยกเลิกการลาของใครก็ได้")

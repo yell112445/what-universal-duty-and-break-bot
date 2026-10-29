@@ -7,8 +7,9 @@ from config_manager import config
 from services.storage_service import read_leave_db, write_leave_db, AUTHORIZED_USERS_DIR
 
 def find_active_record(all_records: list, user_id: str) -> Optional[dict]:
+    u_str = str(user_id)
     for record in all_records:
-        if record.get("user_id") == user_id and record.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+        if str(record.get("user_id")) == u_str and record.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
             return record
     return None
 
