@@ -85,18 +85,18 @@ class CleanLeaveRequestModal(Modal):
         # แปลงวันที่เริ่มลา ด้วย Smart Date Parser (รองรับ พ.ศ., ค.ศ., ตัวย่อ 2 หลัก, วันนี้, พรุ่งนี้ ฯลฯ)
         req_start_date = parse_smart_date(date_str, config.timezone)
         if not req_start_date:
-            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `พรุ่งนี้`, `29/10/2569` หรือ `29/10/2026`", ephemeral=True)
+            return await interaction.followup.send("รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `พรุ่งนี้`, `29/10/2569` หรือ `29/10/2026`", ephemeral=True)
 
         if req_start_date < today:
-            return await interaction.followup.send("❌ ไม่สามารถยื่นลาย้อนหลังได้ครับ", ephemeral=True)
+            return await interaction.followup.send("ไม่สามารถยื่นลาย้อนหลังได้ครับ", ephemeral=True)
 
         # แปลงจำนวนวัน (สูงสุดไม่เกิน 7 วัน)
         try:
             days = int(self.days_input.value.strip())
             if days <= 0 or days > 7:
-                return await interaction.followup.send("❌ สามารถลาได้สูงสุดไม่เกิน 7 วันต่อครั้ง (กรอก 1 - 7 วัน)", ephemeral=True)
+                return await interaction.followup.send("สามารถลาได้สูงสุดไม่เกิน 7 วันต่อครั้ง (กรอก 1 - 7 วัน)", ephemeral=True)
         except ValueError:
-            return await interaction.followup.send("❌ กรุณากรอกจำนวนวันเป็นตัวเลขจำนวนเต็ม 1 ถึง 7", ephemeral=True)
+            return await interaction.followup.send("กรุณากรอกจำนวนวันเป็นตัวเลขจำนวนเต็ม 1 ถึง 7", ephemeral=True)
 
         req_end_date = req_start_date + timedelta(days=days - 1)
         reason = self.reason_input.value.strip()
@@ -113,7 +113,7 @@ class CleanLeaveRequestModal(Modal):
                     r_st = date.fromisoformat(r["start_date"])
                     r_en = date.fromisoformat(r["end_date"])
                     if not (req_end_date < r_st or req_start_date > r_en):
-                        return await interaction.followup.send("⚠️ คุณมีรายการลาในช่วงเวลาดังกล่าวอยู่แล้วครับ", ephemeral=True)
+                        return await interaction.followup.send("คุณมีรายการลาในช่วงเวลาดังกล่าวอยู่แล้วครับ", ephemeral=True)
                 except Exception:
                     pass
 
@@ -132,7 +132,7 @@ class CleanLeaveRequestModal(Modal):
                         pass
             if cnt >= max_quota:
                 return await interaction.followup.send(
-                    f"❌ ไม่สามารถขอลางานได้ เนื่องจากวันที่ `{curr_d.strftime('%d/%m/%Y')}` มีคนลาเต็มโควตาแล้ว ({cnt}/{max_quota} คน)",
+                    f"ไม่สามารถขอลางานได้ เนื่องจากวันที่ `{curr_d.strftime('%d/%m/%Y')}` มีคนลาเต็มโควตาแล้ว ({cnt}/{max_quota} คน)",
                     ephemeral=True
                 )
             curr_d += timedelta(days=1)
@@ -212,7 +212,7 @@ class CleanReturnToDutyModal(Modal):
         if is_success:
             now_ts = int(datetime.now().timestamp())
             embed = discord.Embed(
-                title="✅ บันทึกการกลับเข้าเวรสำเร็จ",
+                title="บันทึกการกลับเข้าเวรสำเร็จ",
                 description=(
                     f"ยินดีต้อนรับกลับเข้าสู่การปฏิบัติหน้าที่!\n\n"
                     f"• **เจ้าหน้าที่:** {interaction.user.mention}\n"
@@ -226,7 +226,7 @@ class CleanReturnToDutyModal(Modal):
             await interaction.followup.send(embed=embed, ephemeral=True)
             await self.cog.update_leave_board()
         else:
-            await interaction.followup.send(f"❌ **ล้มเหลว:** {reason}", ephemeral=True)
+            await interaction.followup.send(f"**ล้มเหลว:** {reason}", ephemeral=True)
 
 class ConfirmCancelLeaveView(View):
     """View สำหรับยืนยันการยกเลิกการลางาน (พร้อมปุ่มยืนยันและปุ่มยกเลิก)"""
@@ -238,11 +238,11 @@ class ConfirmCancelLeaveView(View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if str(interaction.user.id) != str(self.user_id):
-            await interaction.response.send_message("❌ คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
+            await interaction.response.send_message("คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="ยืนยันยกเลิกลา", style=discord.ButtonStyle.danger, emoji="✅")
+    @discord.ui.button(label="ยืนยันยกเลิกลา", style=discord.ButtonStyle.danger)
     async def confirm_button(self, interaction: discord.Interaction, button: Button):
         await interaction.response.defer(ephemeral=True)
         is_admin = config.is_admin(interaction.user.id)
@@ -280,21 +280,21 @@ class ConfirmCancelLeaveView(View):
                     pass
 
             success_embed = discord.Embed(
-                title="✅ ยกเลิกการลางานสำเร็จ",
+                title="ยกเลิกการลางานสำเร็จ",
                 description=(
                     f"**ผู้ใช้งาน:** <@{self.user_id}>\n"
                     f"• รหัสใบลา: `{self.leave_record.get('record_id', '-')}`\n"
                     f"• ช่วงเวลา: `{self.leave_record.get('start_date')}` ถึง `{self.leave_record.get('end_date')}`\n\n"
-                    f"🎉 ระบบได้ทำการยกเลิกใบลาและคืนโควตาวันลาของคุณกลับสู่ระบบเรียบร้อยแล้วครับ"
+                    f"ระบบได้ทำการยกเลิกใบลาและคืนโควตาวันลาของคุณกลับสู่ระบบเรียบร้อยแล้วครับ"
                 ),
                 color=discord.Color.from_rgb(46, 204, 113)
             )
             success_embed.set_footer(text="What Universal Leave System")
             await interaction.edit_original_response(embed=success_embed, view=None)
         else:
-            await interaction.followup.send(f"❌ {msg}", ephemeral=True)
+            await interaction.followup.send(f"{msg}", ephemeral=True)
 
-    @discord.ui.button(label="ไม่ยกเลิก / ปิด", style=discord.ButtonStyle.secondary, emoji="❌")
+    @discord.ui.button(label="ไม่ยกเลิก / ปิด", style=discord.ButtonStyle.secondary)
     async def cancel_button(self, interaction: discord.Interaction, button: Button):
         cancel_embed = discord.Embed(
             title="ยกเลิกการทำรายการ",
@@ -313,11 +313,11 @@ class LeaveStatusCheckView(View):
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if str(interaction.user.id) != str(self.user_id):
-            await interaction.response.send_message("❌ คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
+            await interaction.response.send_message("คุณไม่มีสิทธิ์กดปุ่มนี้", ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="ยกเลิกลา", style=discord.ButtonStyle.danger, emoji="🗑️")
+    @discord.ui.button(label="ยกเลิกลา", style=discord.ButtonStyle.danger)
     async def cancel_leave_flow_button(self, interaction: discord.Interaction, button: Button):
         st_d = self.leave_record.get("start_date", "-")
         en_d = self.leave_record.get("end_date", "-")
@@ -343,14 +343,14 @@ class LeaveStatusCheckView(View):
             pass
 
         confirm_embed = discord.Embed(
-            title="⚠️ ยืนยันการยกเลิกการลางาน",
+            title="ยืนยันการยกเลิกการลางาน",
             description=(
                 f"คุณแน่ใจหรือไม่ว่าต้องการยกเลิกคำขอลางานนี้?\n\n"
                 f"• **ผู้ใช้งาน:** <@{self.user_id}>\n"
                 f"• **รหัสใบลา:** `{rec_id}`\n"
                 f"• **ช่วงเวลา:** {period_display}\n"
                 f"• **เหตุผลเดิม:** `{reason}`\n\n"
-                f"⚠️ **หมายเหตุ:** หากยืนยันแล้ว คำขอลานี้จะถูกยกเลิกทันที และระบบจะคืนโควตาวันลาของคุณกลับสู่ระบบ"
+                f"**หมายเหตุ:** หากยืนยันแล้ว คำขอลานี้จะถูกยกเลิกทันที และระบบจะคืนโควตาวันลาของคุณกลับสู่ระบบ"
             ),
             color=discord.Color.from_rgb(237, 66, 69)
         )
@@ -392,7 +392,7 @@ class CleanLeaveBoardView(View):
                 pass
 
             return await interaction.response.send_message(
-                f"❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว**\n"
+                f"**คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว**\n"
                 f"• **ช่วงเวลา:** {period_str}\n"
                 f"• **รหัสใบลา:** `{active_rec.get('record_id', '-')}`\n\n"
                 f"-# คุณไม่สามารถยื่นลาซ้ำได้ หากต้องการยกเลิกการลาเดิม กรุณากดปุ่ม **'เช็คสิทธิ์'** แล้วกดยกเลิกลาครับ",
@@ -471,7 +471,7 @@ class CleanLeaveBoardView(View):
             except Exception:
                 pass
 
-            status_display = "🔴 **กำลังลา**" if user_active_leave.get("status") == "ON_LEAVE" else "⏳ **ครบกำหนดลารอกลับเข้าเวร**"
+            status_display = "**กำลังลา**" if user_active_leave.get("status") == "ON_LEAVE" else "**ครบกำหนดลารอกลับเข้าเวร**"
             embed.add_field(
                 name="สถานะของคุณ",
                 value=f"{status_display}\n• **ช่วงเวลา:** {date_str} {rem_str}\n• **เหตุผล:** `{reason}`\n• **รหัสใบลา:** `{rec_id}`",
@@ -479,7 +479,7 @@ class CleanLeaveBoardView(View):
             )
             reply_view = LeaveStatusCheckView(cog, user_id, user_active_leave)
         else:
-            embed.add_field(name="สถานะของคุณ", value="🟢 `ปกติ` (ไม่มีใบลาค้างอยู่ในระบบ สามารถยื่นลาได้)", inline=False)
+            embed.add_field(name="สถานะของคุณ", value="`ปกติ` (ไม่มีใบลาค้างอยู่ในระบบ สามารถยื่นลาได้)", inline=False)
 
         rem_quota = max(0, max_quota - today_count)
         embed.add_field(name="โควตาวันนี้", value=f"`{today_count} / {max_quota}` คน (ว่าง {rem_quota} ที่)", inline=True)
@@ -497,7 +497,7 @@ class CleanLeaveBoardView(View):
         user_id = str(interaction.user.id)
         is_success, reason = await leave_service.perform_return_pre_check(user_id)
         if not is_success:
-            return await interaction.response.send_message(f"❌ **ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
+            return await interaction.response.send_message(f"**ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
 
         cog = self.cog or interaction.client.get_cog("BreaktimeCog")
         await interaction.response.send_modal(CleanReturnToDutyModal(cog))
@@ -516,7 +516,7 @@ class LeaveTypeView(View):
         active_rec = leave_service.find_active_record(records, user_id)
         if active_rec:
             return await interaction.response.send_message(
-                "❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
+                "**คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
                 ephemeral=True
             )
         cog = self.cog or interaction.client.get_cog("BreaktimeCog")
@@ -532,7 +532,7 @@ class LeaveTypeView(View):
         user_id = str(interaction.user.id)
         is_success, reason = await leave_service.perform_return_pre_check(user_id)
         if not is_success:
-            return await interaction.response.send_message(f"❌ **ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
+            return await interaction.response.send_message(f"**ไม่สามารถกลับเข้าเวรได้**\n{reason}", ephemeral=True)
 
         cog = self.cog or interaction.client.get_cog("BreaktimeCog")
         await interaction.response.send_modal(CleanReturnToDutyModal(cog))
@@ -701,7 +701,7 @@ class BreaktimeCog(commands.Cog):
     @app_commands.describe(channel="เลือกห้องที่ต้องการให้แสดง Leave Board (เว้นว่างเพื่อใช้ห้องปัจจุบัน)")
     async def leave_setup_command(self, interaction: discord.Interaction, channel: Optional[discord.TextChannel] = None):
         if not (config.is_admin(interaction.user.id) or config.is_owner(interaction.user.id)):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         target_ch = channel or interaction.channel
         await interaction.response.defer(ephemeral=True)
@@ -714,7 +714,7 @@ class BreaktimeCog(commands.Cog):
         await write_leave_db(all_data)
 
         await self.update_leave_board()
-        await interaction.followup.send(f"✅ ติดตั้งแผง Leave Board สำเร็จที่ห้อง {target_ch.mention} เรียบร้อยแล้ว!", ephemeral=True)
+        await interaction.followup.send(f"ติดตั้งแผง Leave Board สำเร็จที่ห้อง {target_ch.mention} เรียบร้อยแล้ว", ephemeral=True)
 
     @app_commands.command(name="leave", description="เริ่มต้นกระบวนการขอลางาน")
     async def leave_command(self, interaction: discord.Interaction):
@@ -724,7 +724,7 @@ class BreaktimeCog(commands.Cog):
         active_rec = leave_service.find_active_record(records, user_id)
         if active_rec:
             return await interaction.response.send_message(
-                "❌ **คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
+                "**คุณมีสถานะการลาค้างอยู่ในระบบอยู่แล้ว** ไม่สามารถยื่นลาซ้ำได้ครับ กรุณากดปุ่ม **'เช็คสิทธิ์'** เพื่อดูข้อมูลหรือยกเลิกการลาเดิม",
                 ephemeral=True
             )
         await interaction.response.send_modal(CleanLeaveRequestModal(self))
@@ -743,10 +743,10 @@ class BreaktimeCog(commands.Cog):
             allow_active=True
         )
         if is_success:
-            await interaction.followup.send(f"✅ {reason}", ephemeral=True)
+            await interaction.followup.send(f"{reason}", ephemeral=True)
             await self.update_leave_board()
         else:
-            await interaction.followup.send(f"❌ {reason}", ephemeral=True)
+            await interaction.followup.send(f"ล้มเหลว: {reason}", ephemeral=True)
 
     @app_commands.command(name="force_leave", description="[Admin] บังคับลา (Bypass) ข้ามทุกกฎเกณฑ์")
     @app_commands.describe(
@@ -756,16 +756,16 @@ class BreaktimeCog(commands.Cog):
     )
     async def force_leave_command(self, interaction: discord.Interaction, member: discord.Member, start_date: str, end_date: str):
         if not config.is_admin(interaction.user.id):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         start_dt = parse_smart_date(start_date.strip(), config.timezone)
         end_dt = parse_smart_date(end_date.strip(), config.timezone)
         if not start_dt or not end_dt:
-            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
+            return await interaction.followup.send("รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
 
         if end_dt < start_dt:
-            return await interaction.followup.send("❌ วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่มต้น", ephemeral=True)
+            return await interaction.followup.send("วันที่สิ้นสุดต้องอยู่หลังวันที่เริ่มต้น", ephemeral=True)
 
         is_success, reason = await leave_service.process_bypass_leave(
             admin_id=str(interaction.user.id),
@@ -774,10 +774,10 @@ class BreaktimeCog(commands.Cog):
             request_end_date=end_dt
         )
         if is_success:
-            await interaction.followup.send(f"✅ {reason}", ephemeral=True)
+            await interaction.followup.send(f"{reason}", ephemeral=True)
             await self.update_leave_board()
         else:
-            await interaction.followup.send(f"❌ {reason}", ephemeral=True)
+            await interaction.followup.send(f"ล้มเหลว: {reason}", ephemeral=True)
 
 
 

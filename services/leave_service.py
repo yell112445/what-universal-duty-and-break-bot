@@ -276,7 +276,7 @@ async def process_leave_request(user_id: str, request_start_date: date, duration
             next_available = find_next_available_l7_slot(all_records, request_start_date + timedelta(days=1))
             err_msg = f"ไม่อนุมัติ: เนื่องจากช่วงเวลาที่ขอมีคนลาพร้อมกัน >= {max_overlap} คน อยู่ {days_full_count} วัน (อนุญาตไม่เกิน {max_overlap_days} วัน)"
             if next_available:
-                err_msg += f"\n💡 **ข้อเสนอแนะ:** วันที่เร็วที่สุดที่ว่าง คือเริ่มตั้งแต่วันที่ **{next_available.strftime('%d/%m/%Y')}**"
+                err_msg += f"\n**ข้อเสนอแนะ:** วันที่เร็วที่สุดที่ว่าง คือเริ่มตั้งแต่วันที่ **{next_available.strftime('%d/%m/%Y')}**"
             return (False, err_msg)
 
     # อนุมัติบันทึกคำขอ
