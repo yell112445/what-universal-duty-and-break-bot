@@ -1,11 +1,18 @@
+import os
+import sys
 import asyncio
 import json
+import logging
+import subprocess
+from datetime import datetime
 from typing import Optional, Any
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Modal, TextInput, View, Select
 from config_manager import config
+
+logger = logging.getLogger("ConfigCog")
 
 class ConfigEditModal(Modal):
     def __init__(self, key: str, current_value: str, display_name: str, value_type: str = "str"):
@@ -506,6 +513,47 @@ class ConfigCog(commands.Cog):
             await interaction.followup.send(msg, ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ เกิดข้อผิดพลาดในการรัน git pull: {e}", ephemeral=True)
+
+    @app_commands.command(name="restart", description="[Admin] รีสตาร์ตกระบวนการทำงานของบอทใหม่ทั้งหมด (Full Process Restart)")
+    async def restart_command(self, interaction: discord.Interaction):
+        if not self._check_admin(interaction):
+            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์เข้าถึงคำสั่งนี้", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        now_ts = int(datetime.now().timestamp())
+        embed = discord.Embed(
+            title="🔄 กำลังรีสตาร์ตบอท...",
+            description=(
+                f"**คำสั่งโดย:** {interaction.user.mention}\n"
+                f"• ระบบกำลังปิดการเชื่อมต่อและเริ่มโปรเซสใหม่ทั้งหมด\n"
+                f"• บอทจะกลับมาออนไลน์ใหม่อัตโนมัติในอีกสักครู่ (~5-10 วินาที)\n\n"
+                f"-# กรุณารอสักครู่ก่อนใช้งานคำสั่งถัดไป"
+            ),
+            color=discord.Color.from_rgb(245, 158, 11),
+            timestamp=datetime.now(config.timezone)
+        )
+        embed.set_footer(text="What Universal System Service")
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+        logger.info(f"[ConfigCog] Bot restart initiated by {interaction.user} ({interaction.user.id})")
+
+        # รอ 1.5 วินาทีเพื่อให้ส่งข้อความใน Discord เสร็จสมบูรณ์
+        await asyncio.sleep(1.5)
+
+        # ปิดการเชื่อมต่อของบอทอย่างปลอดภัย
+        try:
+            await self.bot.close()
+        except Exception:
+            pass
+
+        # เริ่มโปรเซสใหม่และปิดตัวเดิม
+        try:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            logger.error(f"[ConfigCog] os.execv failed: {e}, falling back to subprocess")
+            subprocess.Popen([sys.executable] + sys.argv)
+            sys.exit(0)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ConfigCog(bot))
