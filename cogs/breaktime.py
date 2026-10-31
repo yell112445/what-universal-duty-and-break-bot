@@ -117,15 +117,26 @@ class CleanLeaveRequestModal(Modal):
                 except Exception:
                     pass
 
-        # ตรวจสอบโควตาจำนวนคนลาในแต่ละวัน
+        # ตรวจสอบโควตาจำนวนคนลาในแต่ละวัน (Bypass / Force Leave จะไม่กินโควตาส่วนกลาง)
         curr_d = req_start_date
         while curr_d <= req_end_date:
             cnt = 0
             for r in records:
                 if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]:
+                    if r.get("leave_type") == "BYPASS":
+                        continue
                     try:
                         r_st = date.fromisoformat(r["start_date"])
                         r_en = date.fromisoformat(r["end_date"])
+                        if r_st.year > 3000:
+                            r_st = r_st.replace(year=r_st.year - 543 * 2)
+                        elif r_st.year >= 2400:
+                            r_st = r_st.replace(year=r_st.year - 543)
+                        if r_en.year > 3000:
+                            r_en = r_en.replace(year=r_en.year - 543 * 2)
+                        elif r_en.year >= 2400:
+                            r_en = r_en.replace(year=r_en.year - 543)
+
                         if r_st <= curr_d <= r_en:
                             cnt += 1
                     except Exception:
@@ -429,7 +440,8 @@ class CleanLeaveBoardView(View):
                         r_en = r_en.replace(year=r_en.year - 543)
 
                     if r_st <= today <= r_en:
-                        today_count += 1
+                        if r.get("leave_type") != "BYPASS":
+                            today_count += 1
                 except Exception:
                     pass
 
@@ -605,13 +617,17 @@ class BreaktimeCog(commands.Cog):
                     st_d = st_d.replace(year=st_d.year - 543)
 
                 en_ts = int(datetime.combine(en_d, datetime.min.time(), tzinfo=config.timezone).timestamp())
+                is_bypass = (r.get("leave_type") == "BYPASS")
+                tag_bypass = " *(Bypass)*" if is_bypass else ""
+
                 if st_d <= today <= en_d:
-                    today_count += 1
+                    if not is_bypass:
+                        today_count += 1
                     rem = (en_d - today).days
-                    on_leave_list.append(f"• {name_display} — สิ้นสุด <t:{en_ts}:D> (เหลือ {max(0, rem)} วัน)")
+                    on_leave_list.append(f"• {name_display} — สิ้นสุด <t:{en_ts}:D> (เหลือ {max(0, rem)} วัน){tag_bypass}")
                 elif st_d > today:
                     st_ts = int(datetime.combine(st_d, datetime.min.time(), tzinfo=config.timezone).timestamp())
-                    queued_list.append(f"• {name_display} — ลา {dur} วัน (<t:{st_ts}:D> — <t:{en_ts}:D>)")
+                    queued_list.append(f"• {name_display} — ลา {dur} วัน (<t:{st_ts}:D> — <t:{en_ts}:D>){tag_bypass}")
 
         c_slate = discord.Color.from_rgb(47, 49, 54)
         embed = discord.Embed(

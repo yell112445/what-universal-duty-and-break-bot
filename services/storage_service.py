@@ -100,7 +100,6 @@ async def load_operation_daily_data(date_obj) -> Dict[str, Any]:
         return await read_json_file(path, {}) or {}
 
 async def save_operation_session_data(user_id: str, player_name: str, start: str, end: str, duration: float, source: str = "manual"):
-    from datetime import date, datetimetime
     try:
         dt = datetime.fromisoformat(start)
     except Exception:

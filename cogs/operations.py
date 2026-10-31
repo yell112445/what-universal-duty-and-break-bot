@@ -410,11 +410,13 @@ class OperationsCog(commands.Cog):
         self.refresh_status_message_loop.cancel()
 
     def is_assistant_or_above(self, interaction: discord.Interaction) -> bool:
-        """ตรวจสอบสิทธิ์คำสั่ง Operations: ยกเลิกเช็ครายคน ให้สิทธิ์เฉพาะ Role 1506299600829550653 และ Owner"""
-        if config.is_owner(interaction.user.id):
+        """ตรวจสอบสิทธิ์คำสั่ง Operations: ให้สิทธิ์ Owner, Admin, Server Administrator และ Role 1506299600829550653"""
+        if config.is_owner(interaction.user.id) or config.is_admin(interaction.user.id):
             return True
-        op_role_id = int(config.get("OPERATION_ROLE_ID") or config.get("ASSISTANT_ROLE_ID") or 1506299600829550653)
         if isinstance(interaction.user, discord.Member):
+            if interaction.user.guild_permissions.administrator:
+                return True
+            op_role_id = int(config.get("OPERATION_ROLE_ID") or config.get("ASSISTANT_ROLE_ID") or 1506299600829550653)
             if interaction.user.get_role(op_role_id):
                 return True
         return False
@@ -701,7 +703,12 @@ class OperationsCog(commands.Cog):
         """ตรวจสอบและหยุดรอบปฏิบัติการอัตโนมัติตามเวลาที่กำหนดไว้ (เช็คจาก Timestamp ป้องกันการพลาดนาที)"""
         try:
             op_status = await load_operation_status()
-            if not op_status.get("status_message_id"):
+            has_active = bool(
+                op_status.get("status_message_id")
+                or op_status.get("start_time")
+                or any(isinstance(k, str) and k.isdigit() for k in op_status.keys())
+            )
+            if not has_active:
                 return
 
             now_local = datetime.now(config.timezone)
@@ -718,7 +725,7 @@ class OperationsCog(commands.Cog):
                 await self.execute_stop(interaction=None, source="auto_stop")
                 return
         except Exception as e:
-            logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}")
+            logger.error(f"[OperationsCog] check_auto_stop_loop error: {e}", exc_info=True)
 
     @otp_rotate_loop.before_loop
     @refresh_status_message_loop.before_loop
@@ -729,9 +736,14 @@ class OperationsCog(commands.Cog):
     # --- Operation Control Logic ---
     async def execute_stop(self, interaction: Optional[discord.Interaction] = None, source: str = "manual"):
         op_status = await load_operation_status()
-        if not op_status.get("status_message_id"):
+        has_active = bool(
+            op_status.get("status_message_id")
+            or op_status.get("start_time")
+            or any(isinstance(k, str) and k.isdigit() for k in op_status.keys())
+        )
+        if not has_active:
             if interaction:
-                await interaction.followup.send("ℹ️ ขณะนี้ไม่มีรอบการทำงานที่เปิดอยู่", ephemeral=True)
+                await interaction.followup.send("ขณะนี้ไม่มีรอบการทำงานที่เปิดอยู่", ephemeral=True)
             return
 
         now_dt = datetime.now(config.timezone)
@@ -748,26 +760,33 @@ class OperationsCog(commands.Cog):
                 except Exception:
                     duration = 0
 
-                await save_operation_session_data(
-                    user_id=k,
-                    player_name=pname,
-                    start=start_str,
-                    end=now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
-                    duration=duration,
-                    source=source
-                )
+                try:
+                    await save_operation_session_data(
+                        user_id=k,
+                        player_name=pname,
+                        start=start_str,
+                        end=now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                        duration=duration,
+                        source=source
+                    )
+                except Exception as se:
+                    logger.error(f"[OperationsCog] Failed to save session for {k}: {se}")
+
                 summary_records.append((k, pname, duration))
 
                 # ส่ง Personal Log สำหรับคนที่ถูกสั่งปิดรอบ
-                clean_start = start_str.split(".")[0] if "." in start_str else start_str
-                await self.send_personal_log(
-                    user_id=k,
-                    player_name=pname,
-                    start_time=clean_start,
-                    end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                    duration=duration,
-                    source=source
-                )
+                try:
+                    clean_start = start_str.split(".")[0] if "." in start_str else start_str
+                    await self.send_personal_log(
+                        user_id=k,
+                        player_name=pname,
+                        start_time=clean_start,
+                        end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                        duration=duration,
+                        source=source
+                    )
+                except Exception as pe:
+                    logger.error(f"[OperationsCog] Failed to send personal log for {k}: {pe}")
 
         # ลบข้อความปุ่มและ OTP
         status_msg_id = op_status.get("status_message_id")
@@ -825,18 +844,21 @@ class OperationsCog(commands.Cog):
             except Exception as e:
                 logger.error(f"[OperationsCog] Failed to edit status message on stop: {e}")
 
-        # เคลียร์สถานะ
+        # เคลียร์สถานะการทำงานเสมอ
         await save_operation_status({})
 
-        caller = interaction.user.display_name if interaction else "Auto Stop"
-        await self.send_assistant_log(
-            "SESSION CLOSED",
-            f"ผู้สั่งการ: **{caller}**\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`",
-            color=discord.Color.from_rgb(47, 49, 54)
-        )
+        try:
+            caller = interaction.user.display_name if interaction else "Auto Stop"
+            await self.send_assistant_log(
+                "SESSION CLOSED",
+                f"ผู้สั่งการ: **{caller}**\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`",
+                color=discord.Color.from_rgb(47, 49, 54)
+            )
+        except Exception as e:
+            logger.error(f"[OperationsCog] Failed to send assistant log: {e}")
 
         if interaction:
-            await interaction.followup.send("✅ ปิดรอบการทำงานและสรุปผลเรียบร้อยแล้ว", ephemeral=True)
+            await interaction.followup.send("ปิดรอบการทำงานและสรุปผลเรียบร้อยแล้ว", ephemeral=True)
 
     # --- Slash Commands ---
     @app_commands.command(name="operation_start", description="เริ่มรอบบันทึกเวลาใหม่ และสร้างปุ่มลงเวลา")
@@ -980,10 +1002,14 @@ class OperationsCog(commands.Cog):
     @app_commands.command(name="operation_stop", description="ยุติรอบปฏิบัติการของทุกคนและสรุปผล")
     async def operation_stop(self, interaction: discord.Interaction):
         if not self.is_assistant_or_above(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        await self.execute_stop(interaction=interaction, source="assistant_stop")
+        try:
+            await self.execute_stop(interaction=interaction, source="assistant_stop")
+        except Exception as e:
+            logger.error(f"[OperationsCog] operation_stop error: {e}", exc_info=True)
+            await interaction.followup.send(f"เกิดข้อผิดพลาดในการปิดรอบ: {e}", ephemeral=True)
 
     @app_commands.command(name="force_stop", description="หยุดเวลาของผู้ใช้ที่ระบุเป็นรายบุคคล")
     @app_commands.describe(member="แท็กผู้ใช้ที่ต้องการให้ออกเวร")

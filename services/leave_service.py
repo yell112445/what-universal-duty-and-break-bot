@@ -242,11 +242,11 @@ async def process_leave_request(user_id: str, request_start_date: date, duration
     if request_start_date < master_cooldown:
         return (False, f"ไม่อนุมัติ: วันที่คุณขอ ({request_start_date.strftime('%d/%m/%Y')}) ยังอยู่ในช่วงคูลดาวน์ (ลาได้อีกครั้งวันที่ {master_cooldown.strftime('%d/%m/%Y')})")
 
-    # ตรวจสอบโควต้าวันเริ่มลาเดียวกัน
+    # ตรวจสอบโควต้าวันเริ่มลาเดียวกัน (BYPASS ไม่กินโควต้า)
     active_leaves = [r for r in all_records if r.get("status") in ["ON_LEAVE", "EXPIRED_PENDING_RETURN"]]
     max_same_day = int(config.get("MAX_LEAVE_PER_DAY") or config.get("MAX_LEAVES_SAME_DAY") or 5)
 
-    leaves_starting_on_day = sum(1 for r in active_leaves if r.get("start_date") == request_start_date.isoformat())
+    leaves_starting_on_day = sum(1 for r in active_leaves if r.get("start_date") == request_start_date.isoformat() and r.get("leave_type") != "BYPASS")
     if leaves_starting_on_day >= max_same_day:
         return (False, f"ไม่อนุมัติ: โควต้า 'วันเริ่มลา' {request_start_date.strftime('%d/%m/%Y')} เต็มแล้ว ({leaves_starting_on_day}/{max_same_day})")
 
@@ -345,14 +345,17 @@ async def process_bypass_leave(admin_id: str, user_id: str, request_start_date: 
     all_data = await read_leave_db()
     all_records = all_data.get("leave_records", [])
 
+    dur_days = (request_end_date - request_start_date).days + 1
     new_record = {
         "record_id": f"L-BYPASS-{len(all_records) + 1001}",
-        "user_id": user_id,
+        "user_id": str(user_id),
         "leave_type": "BYPASS",
         "start_date": request_start_date.isoformat(),
         "end_date": request_end_date.isoformat(),
+        "duration_days": dur_days,
+        "reason": "Admin Force Leave (Bypass)",
         "status": "ON_LEAVE",
-        "bypass_by_admin": admin_id
+        "bypass_by_admin": str(admin_id)
     }
     all_data["leave_records"].append(new_record)
 
