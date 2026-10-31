@@ -9,7 +9,10 @@ from discord.ext import commands, tasks
 from discord.ui import Modal, TextInput, View, Button
 
 from config_manager import config
-from services.storage_service import read_leave_db, write_leave_db, AUTHORIZED_USERS_DIR, parse_smart_date, sanitize_iso_date
+from services.storage_service import (
+    read_leave_db, write_leave_db, AUTHORIZED_USERS_DIR,
+    parse_smart_date, sanitize_iso_date, add_chunked_fields
+)
 from services import leave_service
 
 TYPE_MAP = {
@@ -641,15 +644,19 @@ class BreaktimeCog(commands.Cog):
             value=f"ใช้ไป `{today_count} / {max_quota}` คน (ว่างอีก `{rem_slots}` ที่)",
             inline=False
         )
-        embed.add_field(
-            name="คนที่กำลังลาอยู่",
-            value="\n".join(on_leave_list[:20]) if on_leave_list else "*— ไม่มีรายชื่อในขณะนี้ —*",
-            inline=False
+        add_chunked_fields(
+            embed=embed,
+            field_title=f"คนที่กำลังลาอยู่ [{len(on_leave_list)}]",
+            lines=on_leave_list,
+            max_len=900,
+            empty_text="*— ไม่มีรายชื่อในขณะนี้ —*"
         )
-        embed.add_field(
-            name="คนที่ลาล่วงหน้า",
-            value="\n".join(queued_list[:20]) if queued_list else "*— ไม่มีคิวล่วงหน้า —*",
-            inline=False
+        add_chunked_fields(
+            embed=embed,
+            field_title=f"คนที่ลาล่วงหน้า [{len(queued_list)}]",
+            lines=queued_list,
+            max_len=900,
+            empty_text="*— ไม่มีคิวล่วงหน้า —*"
         )
         embed.set_footer(text="ตัดรอบวันลาทุก 03:00 น.")
 

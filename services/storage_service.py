@@ -289,3 +289,85 @@ def sanitize_iso_date(d_str: str) -> str:
     except Exception:
         pass
     return d_str
+
+# --- 6. Discord Embed & Text Limit Protection Helpers ---
+def chunk_lines_by_length(lines: list[str], max_len: int = 900) -> list[str]:
+    """
+    รวมรายการข้อความทีละบรรทัดเป็นกลุ่มๆ โดยแต่ละกลุ่มยาวไม่เกิน max_len ตัวอักษรอย่างปลอดภัย
+    (Discord embed field value limit: 1024)
+    """
+    if not lines:
+        return []
+    chunks = []
+    current_chunk = []
+    current_len = 0
+    for line in lines:
+        line_len = len(line) + 1  # รวม \n
+        if current_chunk and (current_len + line_len > max_len):
+            chunks.append("\n".join(current_chunk))
+            current_chunk = [line]
+            current_len = line_len
+        else:
+            current_chunk.append(line)
+            current_len += line_len
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+    return chunks
+
+def get_embed_length(embed) -> int:
+    """คำนวณความยาวตัวอักษรทั้งหมดใน Discord Embed (Discord max limit: 6000)"""
+    total = len(getattr(embed, "title", "") or "") + len(getattr(embed, "description", "") or "")
+    footer = getattr(embed, "footer", None)
+    if footer and getattr(footer, "text", None):
+        total += len(footer.text)
+    author = getattr(embed, "author", None)
+    if author and getattr(author, "name", None):
+        total += len(author.name)
+    for f in getattr(embed, "fields", []):
+        total += len(getattr(f, "name", "") or "") + len(getattr(f, "value", "") or "")
+    return total
+
+def add_chunked_fields(
+    embed,
+    field_title: str,
+    lines: list[str],
+    max_len: int = 900,
+    max_fields: int = 20,
+    empty_text: str = "*— ไม่มีรายชื่อ —*",
+    inline: bool = False
+):
+    """
+    เพิ่ม fields ลงใน embed โดยแบ่งตามความยาว max_len และจำกัดไม่ให้เกิน max_fields
+    พร้อมป้องกันไม่ให้ field value เกิน 1024 ตัวอักษร และ Embed ทั้งหมดไม่เกิน 5500 ตัวอักษร
+    """
+    if not lines:
+        embed.add_field(name=field_title, value=empty_text, inline=inline)
+        return
+
+    chunks = chunk_lines_by_length(lines, max_len=max_len)
+    total_chunks = len(chunks)
+
+    current_fields_count = len(getattr(embed, "fields", []))
+    allowed_new_fields = min(max_fields, 24 - current_fields_count)
+
+    if allowed_new_fields <= 0:
+        return
+
+    if total_chunks == 1:
+        if get_embed_length(embed) + len(field_title) + len(chunks[0]) <= 5500:
+            embed.add_field(name=field_title, value=chunks[0], inline=inline)
+    else:
+        for idx in range(min(total_chunks, allowed_new_fields)):
+            chunk_val = chunks[idx]
+            if idx == allowed_new_fields - 1 and total_chunks > allowed_new_fields:
+                suffix = "\n... และอื่น ๆ อีก (ดูรายละเอียดเต็มในรายงาน)"
+                if len(chunk_val) + len(suffix) <= 1020:
+                    chunk_val += suffix
+                title = f"{field_title} ({idx + 1}/{total_chunks})"
+                if get_embed_length(embed) + len(title) + len(chunk_val) <= 5500:
+                    embed.add_field(name=title, value=chunk_val, inline=inline)
+                break
+            else:
+                title = f"{field_title} ({idx + 1}/{total_chunks})"
+                if get_embed_length(embed) + len(title) + len(chunk_val) <= 5500:
+                    embed.add_field(name=title, value=chunk_val, inline=inline)

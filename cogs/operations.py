@@ -20,6 +20,7 @@ from services.storage_service import (
     parse_smart_date,
     load_operation_status, save_operation_status,
     load_operation_daily_data, save_operation_session_data,
+    chunk_lines_by_length, get_embed_length, add_chunked_fields,
     OPERATIONS_DIR, DATA_DIR
 )
 
@@ -719,7 +720,13 @@ class OperationsCog(commands.Cog):
             for unit_name, members in unit_groups.items():
                 if members:
                     has_members = True
-                    embed.add_field(name=f"{unit_name} [{len(members)}]", value="\n".join(members[:20]), inline=False)
+                    add_chunked_fields(
+                        embed=embed,
+                        field_title=f"{unit_name} [{len(members)}]",
+                        lines=members,
+                        max_len=900,
+                        inline=False
+                    )
 
             if not has_members:
                 embed.add_field(name="รายชื่อคนที่ Check-in อยู่", value="*— ไม่มีรายชื่อในขณะนี้ —*", inline=False)
@@ -770,6 +777,79 @@ class OperationsCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- Operation Control Logic ---
+    def build_closed_embed(
+        self,
+        now_dt: datetime,
+        now_ts: int,
+        total_users: int,
+        total_dur: int,
+        lines: List[str]
+    ) -> discord.Embed:
+        c_slate = discord.Color.from_rgb(47, 49, 54)
+        emb = discord.Embed(
+            title="WHAT UNIVERSAL — TIME TRACKER",
+            description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+            color=c_slate,
+            timestamp=now_dt
+        )
+        emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+        emb.add_field(name="ตัดรอบเมื่อ", value=f"<t:{now_ts}:t>", inline=True)
+        emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=True)
+        emb.add_field(
+            name="ภาพรวมรอบการทำงาน",
+            value=f"• ผู้ปฏิบัติงานทั้งหมด: `{total_users}` นาย\n• เวลารวมทั้งหมด: `{format_duration(total_dur)}`",
+            inline=False
+        )
+        add_chunked_fields(
+            embed=emb,
+            field_title=f"สรุปเวลาทำงานรอบนี้ [{total_users} นาย]",
+            lines=lines,
+            max_len=900,
+            empty_text="*— ไม่มีผู้ลงเวลาในรอบนี้ —*"
+        )
+        emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+        return emb
+
+    async def safely_edit_closed_panel(
+        self,
+        msg: discord.Message,
+        emb: discord.Embed,
+        now_dt: datetime,
+        now_ts: int,
+        total_users: int,
+        total_dur: int
+    ) -> bool:
+        disabled_view = DisabledOperationView()
+        try:
+            await msg.edit(embed=emb, view=disabled_view)
+            return True
+        except discord.HTTPException as he:
+            logger.warning(f"Primary embed edit failed for message {msg.id}: {he}, applying compact emergency fallback...")
+            try:
+                c_slate = discord.Color.from_rgb(47, 49, 54)
+                emergency_emb = discord.Embed(
+                    title="WHAT UNIVERSAL — TIME TRACKER",
+                    description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+                    color=c_slate,
+                    timestamp=now_dt
+                )
+                emergency_emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+                emergency_emb.add_field(name="ตัดรอบเมื่อ", value=f"<t:{now_ts}:t>", inline=True)
+                emergency_emb.add_field(
+                    name="ภาพรวมรอบการทำงาน",
+                    value=f"• ผู้ปฏิบัติงานทั้งหมด: `{total_users}` นาย\n• เวลารวมทั้งหมด: `{format_duration(total_dur)}`\n-# ข้อมูลทั้งหมดถูกบันทึกลงระบบรายงานประจำวันเรียบร้อยแล้ว",
+                    inline=False
+                )
+                emergency_emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+                await msg.edit(embed=emergency_emb, view=disabled_view)
+                return True
+            except Exception as e2:
+                logger.error(f"Fallback embed edit failed for message {msg.id}: {e2}")
+                return False
+        except Exception as e:
+            logger.error(f"Unexpected error editing message {msg.id}: {e}")
+            return False
+
     async def execute_stop(
         self,
         interaction: Optional[discord.Interaction] = None,
@@ -786,9 +866,23 @@ class OperationsCog(commands.Cog):
             )
 
             now_dt = datetime.now(config.timezone)
+            now_ts = int(now_dt.timestamp())
             summary_records = []
+            user_session_map = {}
 
-            # ปิด session ของผู้ใช้ที่ยังค้างอยู่
+            # 1. รวบรวม session ของคนที่ Check-out ไปก่อนหน้าในรอบนี้
+            for sess in op_status.get("recent_sessions", []) or []:
+                sess_uid = str(sess.get("discord_id", ""))
+                if not sess_uid:
+                    continue
+                sess_dur = int(sess.get("duration_seconds", 0))
+                sess_pname = sess.get("player_name", f"User {sess_uid}")
+                if sess_uid in user_session_map:
+                    user_session_map[sess_uid]["duration"] += sess_dur
+                else:
+                    user_session_map[sess_uid] = {"player_name": sess_pname, "duration": sess_dur}
+
+            # 2. ปิด session ของผู้ใช้ที่ยังค้างอยู่ ณ ขณะสั่งหยุด
             for k, v in list(op_status.items()):
                 if isinstance(k, str) and k.isdigit():
                     pname = v.get("player_name", f"User {k}")
@@ -811,6 +905,11 @@ class OperationsCog(commands.Cog):
                     except Exception as se:
                         logger.error(f"[OperationsCog] Failed to save session for {k}: {se}")
 
+                    if k in user_session_map:
+                        user_session_map[k]["duration"] += duration
+                    else:
+                        user_session_map[k] = {"player_name": pname, "duration": duration}
+
                     summary_records.append((k, pname, duration))
 
                     # ส่ง Personal Log สำหรับคนที่ถูกสั่งปิดรอบ
@@ -826,6 +925,35 @@ class OperationsCog(commands.Cog):
                         )
                     except Exception as pe:
                         logger.error(f"[OperationsCog] Failed to send personal log for {k}: {pe}")
+
+            # 3. Fallback: หาก user_session_map ยังว่าง ให้ดึงประวัติของวันนี้มาแสดงผล ป้องกันชื่อหาย
+            if not user_session_map:
+                try:
+                    daily_data = await load_operation_daily_data(now_dt)
+                    for d_uid, d_val in (daily_data or {}).items():
+                        tot_sec = sum(int(s.get("duration_seconds", 0)) for s in d_val.get("sessions", []))
+                        if tot_sec > 0:
+                            user_session_map[d_uid] = {
+                                "player_name": d_val.get("player_name", f"User {d_uid}"),
+                                "duration": tot_sec
+                            }
+                except Exception as de:
+                    logger.warning(f"Fallback daily_data load failed: {de}")
+
+            # เรียงลำดับผู้ปฏิบัติงานตามเวลาจากมากไปน้อย
+            sorted_summary = sorted(user_session_map.items(), key=lambda x: x[1]["duration"], reverse=True)
+            total_duration_all = sum(item[1]["duration"] for item in sorted_summary)
+            total_users_count = len(sorted_summary)
+            lines = [f"• <@{uid}> — `{format_duration(info['duration'])}`" for uid, info in sorted_summary]
+
+            # สร้าง Embed สรุปผลที่ปลอดภัยจาก Discord Limits
+            closed_embed = self.build_closed_embed(
+                now_dt=now_dt,
+                now_ts=now_ts,
+                total_users=total_users_count,
+                total_dur=total_duration_all,
+                lines=lines
+            )
 
             # ลบข้อความปุ่มและ OTP
             status_msg_id = target_message_id or op_status.get("status_message_id")
@@ -862,8 +990,6 @@ class OperationsCog(commands.Cog):
             if interaction and interaction.channel and interaction.channel not in channels_to_sweep:
                 channels_to_sweep.append(interaction.channel)
 
-            c_slate = discord.Color.from_rgb(47, 49, 54)
-            now_ts = int(now_dt.timestamp())
             closed_panels_count = 0
 
             # 1. หากมีการระบุ target_message_id ให้ปิดข้อความนั้นโดยตรง
@@ -872,24 +998,16 @@ class OperationsCog(commands.Cog):
                     try:
                         tm = await ch.fetch_message(target_message_id)
                         if tm:
-                            emb = discord.Embed(
-                                title="WHAT UNIVERSAL — TIME TRACKER",
-                                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
-                                color=c_slate,
-                                timestamp=now_dt
+                            ok = await self.safely_edit_closed_panel(
+                                msg=tm,
+                                emb=closed_embed,
+                                now_dt=now_dt,
+                                now_ts=now_ts,
+                                total_users=total_users_count,
+                                total_dur=total_duration_all
                             )
-                            emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
-                            emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
-                            emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
-                            lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
-                            emb.add_field(
-                                name="สรุปเวลาทำงานรอบนี้",
-                                value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
-                                inline=False
-                            )
-                            emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
-                            await tm.edit(embed=emb, view=DisabledOperationView())
-                            closed_panels_count += 1
+                            if ok:
+                                closed_panels_count += 1
                     except Exception:
                         pass
 
@@ -899,24 +1017,16 @@ class OperationsCog(commands.Cog):
                     try:
                         msg = await ch.fetch_message(int(status_msg_id))
                         if msg:
-                            emb = discord.Embed(
-                                title="WHAT UNIVERSAL — TIME TRACKER",
-                                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
-                                color=c_slate,
-                                timestamp=now_dt
+                            ok = await self.safely_edit_closed_panel(
+                                msg=msg,
+                                emb=closed_embed,
+                                now_dt=now_dt,
+                                now_ts=now_ts,
+                                total_users=total_users_count,
+                                total_dur=total_duration_all
                             )
-                            emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
-                            emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
-                            emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
-                            lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
-                            emb.add_field(
-                                name="สรุปเวลาทำงานรอบนี้",
-                                value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
-                                inline=False
-                            )
-                            emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
-                            await msg.edit(embed=emb, view=DisabledOperationView())
-                            closed_panels_count += 1
+                            if ok:
+                                closed_panels_count += 1
                     except Exception:
                         pass
 
@@ -929,27 +1039,16 @@ class OperationsCog(commands.Cog):
                             if first_emb.title and "WHAT UNIVERSAL — TIME TRACKER" in first_emb.title:
                                 is_closed = any(f.name == "สถานะระบบ" and "Closed" in (f.value or "") for f in first_emb.fields)
                                 if not is_closed or len(msg.components) > 0:
-                                    try:
-                                        emb = discord.Embed(
-                                            title="WHAT UNIVERSAL — TIME TRACKER",
-                                            description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
-                                            color=c_slate,
-                                            timestamp=now_dt
-                                        )
-                                        emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
-                                        emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
-                                        emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
-                                        lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
-                                        emb.add_field(
-                                            name="สรุปเวลาทำงานรอบนี้",
-                                            value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
-                                            inline=False
-                                        )
-                                        emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
-                                        await msg.edit(embed=emb, view=DisabledOperationView())
+                                    ok = await self.safely_edit_closed_panel(
+                                        msg=msg,
+                                        emb=closed_embed,
+                                        now_dt=now_dt,
+                                        now_ts=now_ts,
+                                        total_users=total_users_count,
+                                        total_dur=total_duration_all
+                                    )
+                                    if ok:
                                         closed_panels_count += 1
-                                    except Exception as me:
-                                        logger.warning(f"Failed to close historic tracker panel {msg.id}: {me}")
                 except Exception as e:
                     logger.error(f"[OperationsCog] Error scanning history for previous panels: {e}")
 
@@ -961,8 +1060,8 @@ class OperationsCog(commands.Cog):
                 caller_tag = f"<@{interaction.user.id}>" if interaction else "**Auto Stop**"
                 await self.send_assistant_log(
                     "SESSION CLOSED",
-                    f"ผู้สั่งการ: {caller_tag}\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`\nจำนวนแผงที่ปิดและล็อค: `{closed_panels_count}` แผง",
-                    color=c_slate
+                    f"ผู้สั่งการ: {caller_tag}\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`\nจำนวนแผงที่ปิดและล็อค: `{closed_panels_count}` แผง\nกำลังพลรวม: `{total_users_count}` นาย",
+                    color=discord.Color.from_rgb(47, 49, 54)
                 )
             except Exception as e:
                 logger.error(f"[OperationsCog] Failed to send assistant log: {e}")
