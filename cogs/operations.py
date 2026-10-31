@@ -126,7 +126,7 @@ class OTPModal(Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         if interaction.user.id != self.opener_id:
-            return await interaction.response.send_message("❌ หน้านี้ไม่ใช่ของคุณ", ephemeral=True)
+            return await interaction.response.send_message("หน้านี้ไม่ใช่ของคุณ", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True, thinking=True)
         op_status = await load_operation_status()
@@ -142,12 +142,12 @@ class OTPModal(Modal):
             try:
                 exp_dt = datetime.fromisoformat(expires_iso)
                 if datetime.now(config.timezone) > exp_dt:
-                    return await interaction.followup.send("❌ OTP หมดอายุแล้ว โปรดรอ OTP รอบถัดไป", ephemeral=True)
+                    return await interaction.followup.send("OTP หมดอายุแล้ว โปรดรอ OTP รอบถัดไป", ephemeral=True)
             except Exception:
                 pass
 
         if self.otp_field.value.strip() != current_otp:
-            return await interaction.followup.send(f"❌ รหัส OTP ไม่ถูกต้อง กรุณาดูในห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", ephemeral=True)
+            return await interaction.followup.send(f"รหัส OTP ไม่ถูกต้อง กรุณาดูในห้อง <#{config.get('OPERATION_OTP_CHANNEL')}>", ephemeral=True)
 
         user_id = str(interaction.user.id)
         verified = op_status.get("otp_verified_users", {}) or {}
@@ -198,15 +198,15 @@ class DisabledOperationView(View):
 
     @discord.ui.button(label="Check-in", style=discord.ButtonStyle.secondary, custom_id="operation_checkin_disabled", disabled=True, row=0)
     async def checkin_disabled(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว ไม่สามารถลงเวลาได้", ephemeral=True)
+        await interaction.response.send_message("รอบการทำงานนี้ปิดแล้ว ไม่สามารถลงเวลาได้", ephemeral=True)
 
     @discord.ui.button(label="Check-out", style=discord.ButtonStyle.secondary, custom_id="operation_checkout_disabled", disabled=True, row=0)
     async def checkout_disabled(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
+        await interaction.response.send_message("รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
 
     @discord.ui.button(label="My Status", style=discord.ButtonStyle.secondary, custom_id="operation_status_disabled", disabled=True, row=0)
     async def status_disabled(self, interaction: discord.Interaction, button: Button):
-        await interaction.response.send_message("❌ รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
+        await interaction.response.send_message("รอบการทำงานนี้ปิดแล้ว", ephemeral=True)
 
 class OperationView(View):
     def __init__(self):
@@ -218,10 +218,26 @@ class OperationView(View):
         user = interaction.user
         user_id = str(user.id)
         op_status = await load_operation_status()
+        active_mid = op_status.get("status_message_id")
 
-        if not op_status.get("status_message_id"):
+        if not active_mid:
+            try:
+                await interaction.message.edit(view=DisabledOperationView())
+            except Exception:
+                pass
             return await interaction.response.send_message(
                 "ขณะนี้ยังไม่มีรอบการทำงานที่เปิดอยู่ กรุณารอเปิดรอบใหม่ครับ",
+                ephemeral=True
+            )
+
+        # ตรวจสอบว่าเป็นแผงก่อนหน้า (แผงเก่าที่ไม่ใช่รอบปัจจุบัน) หรือไม่
+        if interaction.message and str(interaction.message.id) != str(active_mid):
+            try:
+                await interaction.message.edit(view=DisabledOperationView())
+            except Exception:
+                pass
+            return await interaction.response.send_message(
+                "แผงนี้เป็นแผงของรอบก่อนหน้าและปิดไปแล้วครับ กรุณาใช้งานผ่านแผงล่าสุดด้านล่าง",
                 ephemeral=True
             )
 
@@ -229,7 +245,7 @@ class OperationView(View):
         if user_id in op_status and isinstance(op_status[user_id], dict) and "start_time" in op_status[user_id]:
             start_str = op_status[user_id].get("start_time", "")
             return await interaction.response.send_message(
-                f"⚠️ คุณกำลัง Check-in ทำงานอยู่แล้ว (เริ่มตั้งแต่ `{start_str.split('.')[0]}`)\nหากต้องการเลิกงานให้กดปุ่ม **Check-out** ครับ",
+                f"คุณกำลัง Check-in ทำงานอยู่แล้ว (เริ่มตั้งแต่ `{start_str.split('.')[0]}`)\nหากต้องการเลิกงานให้กดปุ่ม **Check-out** ครับ",
                 ephemeral=True
             )
 
@@ -281,16 +297,32 @@ class OperationView(View):
         user = interaction.user
         user_id = str(user.id)
         op_status = await load_operation_status()
+        active_mid = op_status.get("status_message_id")
 
-        if not op_status.get("status_message_id"):
+        if not active_mid:
+            try:
+                await interaction.message.edit(view=DisabledOperationView())
+            except Exception:
+                pass
             return await interaction.response.send_message(
                 "ขณะนี้ไม่มีรอบการทำงานที่เปิดอยู่",
                 ephemeral=True
             )
 
+        # ตรวจสอบว่าเป็นแผงก่อนหน้า (แผงเก่าที่ไม่ใช่รอบปัจจุบัน) หรือไม่
+        if interaction.message and str(interaction.message.id) != str(active_mid):
+            try:
+                await interaction.message.edit(view=DisabledOperationView())
+            except Exception:
+                pass
+            return await interaction.response.send_message(
+                "แผงนี้เป็นแผงของรอบก่อนหน้าและปิดไปแล้วครับ กรุณาใช้งานผ่านแผงล่าสุดด้านล่าง",
+                ephemeral=True
+            )
+
         if user_id not in op_status or not isinstance(op_status[user_id], dict) or "start_time" not in op_status[user_id]:
             return await interaction.response.send_message(
-                "⚠️ คุณยังไม่ได้กด Check-in เริ่มงานในรอบนี้ครับ",
+                "คุณยังไม่ได้กด Check-in เริ่มงานในรอบนี้ครับ",
                 ephemeral=True
             )
 
@@ -400,6 +432,7 @@ class OperationView(View):
 class OperationsCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._is_stopping = False
         self.otp_rotate_loop.start()
         self.check_auto_stop_loop.start()
         self.refresh_status_message_loop.start()
@@ -609,6 +642,9 @@ class OperationsCog(commands.Cog):
 
     async def update_status_message(self):
         """อัปเดต Embed สถานะกำลังพลที่ปฏิบัติการอยู่แบบ Realtime ทันที"""
+        if getattr(self, "_is_stopping", False):
+            return
+
         try:
             op_status = await load_operation_status()
             status_msg_id = op_status.get("status_message_id")
@@ -734,148 +770,245 @@ class OperationsCog(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- Operation Control Logic ---
-    async def execute_stop(self, interaction: Optional[discord.Interaction] = None, source: str = "manual"):
-        op_status = await load_operation_status()
-        has_active = bool(
-            op_status.get("status_message_id")
-            or op_status.get("start_time")
-            or any(isinstance(k, str) and k.isdigit() for k in op_status.keys())
-        )
-        if not has_active:
-            if interaction:
-                await interaction.followup.send("ขณะนี้ไม่มีรอบการทำงานที่เปิดอยู่", ephemeral=True)
-            return
-
-        now_dt = datetime.now(config.timezone)
-        summary_records = []
-
-        # ปิด session ของผู้ใช้ที่ยังค้างอยู่
-        for k, v in list(op_status.items()):
-            if isinstance(k, str) and k.isdigit():
-                pname = v.get("player_name", f"User {k}")
-                start_str = v.get("start_time", "")
-                try:
-                    st_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=config.timezone)
-                    duration = int((now_dt - st_dt).total_seconds())
-                except Exception:
-                    duration = 0
-
-                try:
-                    await save_operation_session_data(
-                        user_id=k,
-                        player_name=pname,
-                        start=start_str,
-                        end=now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
-                        duration=duration,
-                        source=source
-                    )
-                except Exception as se:
-                    logger.error(f"[OperationsCog] Failed to save session for {k}: {se}")
-
-                summary_records.append((k, pname, duration))
-
-                # ส่ง Personal Log สำหรับคนที่ถูกสั่งปิดรอบ
-                try:
-                    clean_start = start_str.split(".")[0] if "." in start_str else start_str
-                    await self.send_personal_log(
-                        user_id=k,
-                        player_name=pname,
-                        start_time=clean_start,
-                        end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                        duration=duration,
-                        source=source
-                    )
-                except Exception as pe:
-                    logger.error(f"[OperationsCog] Failed to send personal log for {k}: {pe}")
-
-        # ลบข้อความปุ่มและ OTP
-        status_msg_id = op_status.get("status_message_id")
-        button_msgs = op_status.get("button_messages", []) or []
-        for bm in button_msgs:
-            if status_msg_id and str(bm.get("message_id")) == str(status_msg_id):
-                continue
-            try:
-                ch = await self.get_channel(bm["channel_id"])
-                if ch:
-                    m = await ch.fetch_message(int(bm["message_id"]))
-                    await m.delete()
-            except Exception:
-                pass
-
-        otp_msg_id = op_status.get("otp_message_id")
-        otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
-        if otp_msg_id and otp_ch_id:
-            try:
-                ch = await self.get_channel(otp_ch_id)
-                if ch:
-                    m = await ch.fetch_message(int(otp_msg_id))
-                    await m.delete()
-            except Exception:
-                pass
-
-        # แก้ไขข้อความสถานะเดิม: เปลี่ยนสี Embed เป็นสีเทา ปรับสถานะเป็น Closed และ Block ปุ่ม (Disabled)
-        status_msg_id = op_status.get("status_message_id")
-        status_ch_id = op_status.get("status_channel_id")
-        if status_msg_id and status_ch_id:
-            try:
-                ch = await self.get_channel(status_ch_id)
-                if ch:
-                    msg = await ch.fetch_message(int(status_msg_id))
-                    c_slate = discord.Color.from_rgb(47, 49, 54)
-                    now_ts = int(now_dt.timestamp())
-                    embed = discord.Embed(
-                        title="WHAT UNIVERSAL — TIME TRACKER",
-                        description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
-                        color=c_slate,
-                        timestamp=now_dt
-                    )
-                    embed.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
-                    embed.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
-                    embed.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
-
-                    lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
-                    embed.add_field(
-                        name="สรุปเวลาทำงานรอบนี้",
-                        value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
-                        inline=False
-                    )
-                    embed.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
-                    await msg.edit(embed=embed, view=DisabledOperationView())
-            except Exception as e:
-                logger.error(f"[OperationsCog] Failed to edit status message on stop: {e}")
-
-        # เคลียร์สถานะการทำงานเสมอ
-        await save_operation_status({})
-
+    async def execute_stop(
+        self,
+        interaction: Optional[discord.Interaction] = None,
+        source: str = "manual",
+        target_message_id: Optional[int] = None
+    ):
+        self._is_stopping = True
         try:
-            caller = interaction.user.display_name if interaction else "Auto Stop"
-            await self.send_assistant_log(
-                "SESSION CLOSED",
-                f"ผู้สั่งการ: **{caller}**\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`",
-                color=discord.Color.from_rgb(47, 49, 54)
+            op_status = await load_operation_status()
+            has_active = bool(
+                op_status.get("status_message_id")
+                or op_status.get("start_time")
+                or any(isinstance(k, str) and k.isdigit() for k in op_status.keys())
             )
-        except Exception as e:
-            logger.error(f"[OperationsCog] Failed to send assistant log: {e}")
 
-        if interaction:
-            await interaction.followup.send("ปิดรอบการทำงานและสรุปผลเรียบร้อยแล้ว", ephemeral=True)
+            now_dt = datetime.now(config.timezone)
+            summary_records = []
+
+            # ปิด session ของผู้ใช้ที่ยังค้างอยู่
+            for k, v in list(op_status.items()):
+                if isinstance(k, str) and k.isdigit():
+                    pname = v.get("player_name", f"User {k}")
+                    start_str = v.get("start_time", "")
+                    try:
+                        st_dt = datetime.strptime(start_str, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=config.timezone)
+                        duration = int((now_dt - st_dt).total_seconds())
+                    except Exception:
+                        duration = 0
+
+                    try:
+                        await save_operation_session_data(
+                            user_id=k,
+                            player_name=pname,
+                            start=start_str,
+                            end=now_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                            duration=duration,
+                            source=source
+                        )
+                    except Exception as se:
+                        logger.error(f"[OperationsCog] Failed to save session for {k}: {se}")
+
+                    summary_records.append((k, pname, duration))
+
+                    # ส่ง Personal Log สำหรับคนที่ถูกสั่งปิดรอบ
+                    try:
+                        clean_start = start_str.split(".")[0] if "." in start_str else start_str
+                        await self.send_personal_log(
+                            user_id=k,
+                            player_name=pname,
+                            start_time=clean_start,
+                            end_time=now_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                            duration=duration,
+                            source=source
+                        )
+                    except Exception as pe:
+                        logger.error(f"[OperationsCog] Failed to send personal log for {k}: {pe}")
+
+            # ลบข้อความปุ่มและ OTP
+            status_msg_id = target_message_id or op_status.get("status_message_id")
+            button_msgs = op_status.get("button_messages", []) or []
+            for bm in button_msgs:
+                if status_msg_id and str(bm.get("message_id")) == str(status_msg_id):
+                    continue
+                try:
+                    ch = await self.get_channel(bm["channel_id"])
+                    if ch:
+                        m = await ch.fetch_message(int(bm["message_id"]))
+                        await m.delete()
+                except Exception:
+                    pass
+
+            otp_msg_id = op_status.get("otp_message_id")
+            otp_ch_id = config.get("OPERATION_OTP_CHANNEL")
+            if otp_msg_id and otp_ch_id:
+                try:
+                    ch = await self.get_channel(otp_ch_id)
+                    if ch:
+                        m = await ch.fetch_message(int(otp_msg_id))
+                        await m.delete()
+                except Exception:
+                    pass
+
+            # เตรียมช่องที่เกี่ยวข้องสำหรับปิดแผงและกวาดแผงค้าง
+            channels_to_sweep = []
+            status_ch_id = op_status.get("status_channel_id")
+            if status_ch_id:
+                ch = await self.get_channel(status_ch_id)
+                if ch and ch not in channels_to_sweep:
+                    channels_to_sweep.append(ch)
+            if interaction and interaction.channel and interaction.channel not in channels_to_sweep:
+                channels_to_sweep.append(interaction.channel)
+
+            c_slate = discord.Color.from_rgb(47, 49, 54)
+            now_ts = int(now_dt.timestamp())
+            closed_panels_count = 0
+
+            # 1. หากมีการระบุ target_message_id ให้ปิดข้อความนั้นโดยตรง
+            if target_message_id:
+                for ch in channels_to_sweep:
+                    try:
+                        tm = await ch.fetch_message(target_message_id)
+                        if tm:
+                            emb = discord.Embed(
+                                title="WHAT UNIVERSAL — TIME TRACKER",
+                                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+                                color=c_slate,
+                                timestamp=now_dt
+                            )
+                            emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+                            emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
+                            emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
+                            lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
+                            emb.add_field(
+                                name="สรุปเวลาทำงานรอบนี้",
+                                value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
+                                inline=False
+                            )
+                            emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+                            await tm.edit(embed=emb, view=DisabledOperationView())
+                            closed_panels_count += 1
+                    except Exception:
+                        pass
+
+            # 2. ปิดแผงหลักของรอบปัจจุบันถ้ามี
+            if status_msg_id:
+                for ch in channels_to_sweep:
+                    try:
+                        msg = await ch.fetch_message(int(status_msg_id))
+                        if msg:
+                            emb = discord.Embed(
+                                title="WHAT UNIVERSAL — TIME TRACKER",
+                                description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+                                color=c_slate,
+                                timestamp=now_dt
+                            )
+                            emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+                            emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
+                            emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
+                            lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
+                            emb.add_field(
+                                name="สรุปเวลาทำงานรอบนี้",
+                                value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
+                                inline=False
+                            )
+                            emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+                            await msg.edit(embed=emb, view=DisabledOperationView())
+                            closed_panels_count += 1
+                    except Exception:
+                        pass
+
+            # 3. กวาดหาแผงประวัติเก่า (แผงก่อนหน้า/แผงที่ค้าง) ในช่องทั้งหมด
+            for ch in channels_to_sweep:
+                try:
+                    async for msg in ch.history(limit=50):
+                        if msg.author.id == self.bot.user.id and msg.embeds:
+                            first_emb = msg.embeds[0]
+                            if first_emb.title and "WHAT UNIVERSAL — TIME TRACKER" in first_emb.title:
+                                is_closed = any(f.name == "สถานะระบบ" and "Closed" in (f.value or "") for f in first_emb.fields)
+                                if not is_closed or len(msg.components) > 0:
+                                    try:
+                                        emb = discord.Embed(
+                                            title="WHAT UNIVERSAL — TIME TRACKER",
+                                            description="-# ระบบลงเวลาทำงานและตรวจสอบรายชื่อคนออนไลน์",
+                                            color=c_slate,
+                                            timestamp=now_dt
+                                        )
+                                        emb.add_field(name="สถานะระบบ", value="`Closed` (ปิดรอบการทำงานแล้ว)", inline=True)
+                                        emb.add_field(name="ตัดรอบอัตโนมัติ", value=f"สิ้นสุดเมื่อ <t:{now_ts}:t>", inline=True)
+                                        emb.add_field(name="รหัส OTP", value="*— ปิดรับรหัส OTP —*", inline=False)
+                                        lines = [f"• <@{uid}> — `{format_duration(dur)}`" for uid, name, dur in summary_records]
+                                        emb.add_field(
+                                            name="สรุปเวลาทำงานรอบนี้",
+                                            value="\n".join(lines[:25]) if lines else "*— ไม่มีผู้ลงเวลาค้างในรอบนี้ —*",
+                                            inline=False
+                                        )
+                                        emb.set_footer(text="What Universal • ปิดรอบการทำงานเรียบร้อยแล้ว")
+                                        await msg.edit(embed=emb, view=DisabledOperationView())
+                                        closed_panels_count += 1
+                                    except Exception as me:
+                                        logger.warning(f"Failed to close historic tracker panel {msg.id}: {me}")
+                except Exception as e:
+                    logger.error(f"[OperationsCog] Error scanning history for previous panels: {e}")
+
+            # เคลียร์สถานะการทำงานเสมอ
+            await save_operation_status({})
+
+            try:
+                caller = interaction.user.display_name if interaction else "Auto Stop"
+                caller_tag = f"<@{interaction.user.id}>" if interaction else "**Auto Stop**"
+                await self.send_assistant_log(
+                    "SESSION CLOSED",
+                    f"ผู้สั่งการ: {caller_tag}\nเวลา: `{now_dt.strftime('%d/%m/%Y %H:%M:%S')}`\nจำนวนแผงที่ปิดและล็อค: `{closed_panels_count}` แผง",
+                    color=c_slate
+                )
+            except Exception as e:
+                logger.error(f"[OperationsCog] Failed to send assistant log: {e}")
+
+            if interaction:
+                if has_active or closed_panels_count > 0:
+                    await interaction.followup.send(
+                        f"ปิดรอบการทำงานและสรุปผลเรียบร้อยแล้ว (ปิดและล็อคปุ่มแผงทั้งหมด `{closed_panels_count}` แผง)",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "ขณะนี้ไม่มีรอบการทำงานที่เปิดอยู่ และไม่พบแผงค้างที่ต้องปิดครับ",
+                        ephemeral=True
+                    )
+        finally:
+            self._is_stopping = False
 
     # --- Slash Commands ---
     @app_commands.command(name="operation_start", description="เริ่มรอบบันทึกเวลาใหม่ และสร้างปุ่มลงเวลา")
     @app_commands.describe(stop_time="เวลาปิดรอบอัตโนมัติเฉพาะรอบนี้ (HH:MM เช่น 18:00 หรือ 03:00) ถ้าไม่ใส่จะยึดตาม config")
     async def operation_start(self, interaction: discord.Interaction, stop_time: Optional[str] = None):
         if not self.is_assistant_or_above(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         if stop_time:
             stop_time = stop_time.strip()
             if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", stop_time):
-                return await interaction.response.send_message("❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
+                return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         op_status = await load_operation_status()
         if op_status.get("status_message_id"):
-            return await interaction.followup.send("⚠️ มีรอบการทำงานเปิดอยู่แล้ว", ephemeral=True)
+            return await interaction.followup.send("มีรอบการทำงานเปิดอยู่แล้ว กรุณาใช้คำสั่ง /operation_stop ก่อนเปิดรอบใหม่", ephemeral=True)
+
+        # สแกนและปิดแผงทำงานก่อนหน้าที่ค้างอยู่ในช่อง เพื่อไม่ให้มีปุ่มตกค้าง
+        try:
+            async for old_msg in interaction.channel.history(limit=35):
+                if old_msg.author.id == self.bot.user.id and old_msg.embeds:
+                    if "WHAT UNIVERSAL — TIME TRACKER" in (old_msg.embeds[0].title or ""):
+                        try:
+                            await old_msg.edit(view=DisabledOperationView())
+                        except Exception:
+                            pass
+        except Exception as sweep_err:
+            logger.warning(f"Sweep previous panels error: {sweep_err}")
 
         now_dt = datetime.now(config.timezone)
         auto_stop_ts = get_next_auto_stop_ts(stop_time)
@@ -963,27 +1096,27 @@ class OperationsCog(commands.Cog):
             color=discord.Color.from_rgb(88, 101, 242)
         )
 
-        status_reply = "✅ เปิดรอบบันทึกเวลาสำเร็จแล้ว!"
+        status_reply = "เปิดรอบบันทึกเวลาสำเร็จแล้ว"
         if stop_time:
-            status_reply += f"\n⏰ ตั้งเวลาปิดรอบอัตโนมัติไว้ที่: `{stop_time}` น."
+            status_reply += f"\nตั้งเวลาปิดรอบอัตโนมัติไว้ที่: `{stop_time}` น."
         if otp_ch_id and not otp_sent_ok:
-            status_reply += f"\n⚠️ **แจ้งเตือน**: ไม่สามารถส่ง OTP ไปยังห้อง <#{otp_ch_id}> ได้ (กรุณาตรวจดูสิทธิ์บอทในช่องดังกล่าว)"
+            status_reply += f"\n**แจ้งเตือน**: ไม่สามารถส่ง OTP ไปยังห้อง <#{otp_ch_id}> ได้ (กรุณาตรวจดูสิทธิ์บอทในช่องดังกล่าว)"
         await interaction.followup.send(status_reply, ephemeral=True)
 
     @app_commands.command(name="operation_set_stop", description="ตั้งหรือเปลี่ยนเวลาปิดรอบอัตโนมัติ (เฉพาะรอบปัจจุบัน)")
     @app_commands.describe(time="เวลาที่ต้องการปิดรอบ (HH:MM เช่น 18:00 หรือ 03:00)")
     async def operation_set_stop(self, interaction: discord.Interaction, time: str):
         if not self.is_assistant_or_above(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         time = time.strip()
         if not re.match(r"^([01]\d|2[0-3]):([0-5]\d)$", time):
-            return await interaction.response.send_message("❌ รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
+            return await interaction.response.send_message("รูปแบบเวลาไม่ถูกต้อง (ใช้ HH:MM เช่น 18:00 หรือ 03:00)", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         op_status = await load_operation_status()
         if not op_status.get("status_message_id"):
-            return await interaction.followup.send("⚠️ ขณะนี้ไม่มีรอบการปฏิบัติงานที่เปิดอยู่", ephemeral=True)
+            return await interaction.followup.send("ขณะนี้ไม่มีรอบการปฏิบัติงานที่เปิดอยู่", ephemeral=True)
 
         auto_stop_ts = get_next_auto_stop_ts(time)
         op_status["temp_auto_stop"] = time
@@ -993,20 +1126,37 @@ class OperationsCog(commands.Cog):
         await self.update_status_message()
 
         await self.send_assistant_log(
-            "⏰ ตั้งเวลาปิดรอบอัตโนมัติ",
+            "ตั้งเวลาปิดรอบอัตโนมัติ",
             f"ผู้ตั้ง: <@{interaction.user.id}>\nเวลาปิด: `{time}` น.",
             color=discord.Color.blue()
         )
-        await interaction.followup.send(f"✅ กำหนดเวลาปิดรอบอัตโนมัติเป็นเวลา `{time}` น. เรียบร้อยแล้ว!", ephemeral=True)
+        await interaction.followup.send(f"กำหนดเวลาปิดรอบอัตโนมัติเป็นเวลา `{time}` น. เรียบร้อยแล้ว", ephemeral=True)
 
-    @app_commands.command(name="operation_stop", description="ยุติรอบปฏิบัติการของทุกคนและสรุปผล")
-    async def operation_stop(self, interaction: discord.Interaction):
+    @app_commands.command(name="operation_stop", description="ยุติรอบปฏิบัติการของทุกคน สรุปผล และปิดแผงทำงานทั้งหมด")
+    @app_commands.describe(panel="ลิงก์ข้อความหรือ Message ID ของแผงที่ต้องการปิด (เว้นว่างไว้เพื่อปิดรอบปัจจุบันและกวาดปิดแผงค้างทั้งหมด)")
+    async def operation_stop(self, interaction: discord.Interaction, panel: Optional[str] = None):
         if not self.is_assistant_or_above(interaction):
             return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
+        target_mid = None
+        if panel:
+            clean_p = panel.strip()
+            if "/" in clean_p:
+                parts = [p for p in clean_p.split("/") if p.isdigit()]
+                if parts:
+                    try:
+                        target_mid = int(parts[-1])
+                    except Exception:
+                        pass
+            elif clean_p.isdigit():
+                try:
+                    target_mid = int(clean_p)
+                except Exception:
+                    pass
+
         try:
-            await self.execute_stop(interaction=interaction, source="assistant_stop")
+            await self.execute_stop(interaction=interaction, source="assistant_stop", target_message_id=target_mid)
         except Exception as e:
             logger.error(f"[OperationsCog] operation_stop error: {e}", exc_info=True)
             await interaction.followup.send(f"เกิดข้อผิดพลาดในการปิดรอบ: {e}", ephemeral=True)
@@ -1015,14 +1165,14 @@ class OperationsCog(commands.Cog):
     @app_commands.describe(member="แท็กผู้ใช้ที่ต้องการให้ออกเวร")
     async def force_stop(self, interaction: discord.Interaction, member: discord.Member):
         if not self.is_assistant_or_above(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         op_status = await load_operation_status()
         uid = str(member.id)
 
         if uid not in op_status or "start_time" not in op_status[uid]:
-            return await interaction.followup.send(f"⚠️ **{member.display_name}** ไม่ได้ลงเวลาอยู่ในขณะนี้", ephemeral=True)
+            return await interaction.followup.send(f"**{member.display_name}** ไม่ได้ลงเวลาอยู่ในขณะนี้", ephemeral=True)
 
         now_dt = datetime.now(config.timezone)
         start_str = op_status[uid].get("start_time")
@@ -1062,23 +1212,23 @@ class OperationsCog(commands.Cog):
             f"ผู้สั่ง: <@{interaction.user.id}>\nผู้ถูกสั่ง: <@{member.id}>\nรวมเวลา: `{format_duration(duration)}`",
             color=discord.Color.from_rgb(245, 158, 11)
         )
-        await interaction.followup.send(f"✅ บันทึกให้ **{member.display_name}** Check-out เรียบร้อยแล้ว (รวมเวลา: `{format_duration(duration)}`)", ephemeral=True)
+        await interaction.followup.send(f"บันทึกให้ **{member.display_name}** Check-out เรียบร้อยแล้ว (รวมเวลา: `{format_duration(duration)}`)", ephemeral=True)
 
     @app_commands.command(name="operation_get_daily_data", description="ดึงรายงานการทำงานรายวัน และส่งออกเป็น Excel")
     @app_commands.describe(date="วันที่ (DD/MM/YYYY)", min_hours="กรองผู้ที่ทำงานรวม >= ชั่วโมงนี้ (เช่น 1)")
     async def operation_get_daily_data(self, interaction: discord.Interaction, date: str, min_hours: float = 0.0):
         if not self.is_assistant_or_above(interaction):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         parsed_d = parse_smart_date(date.strip(), config.timezone)
         if not parsed_d:
-            return await interaction.followup.send("❌ รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
+            return await interaction.followup.send("รูปแบบวันที่ไม่ถูกต้อง กรุณากรอก เช่น `วันนี้`, `28/10/2569` หรือ `28/10/2026`", ephemeral=True)
         query_date = datetime.combine(parsed_d, datetime.min.time())
 
         daily_data = await load_operation_daily_data(query_date)
         if not daily_data:
-            return await interaction.followup.send(f"ℹ️ ไม่พบข้อมูลการทำงานสำหรับวันที่ `{date}`", ephemeral=True)
+            return await interaction.followup.send(f"ไม่พบข้อมูลการทำงานสำหรับวันที่ `{date}`", ephemeral=True)
 
         wb = Workbook()
         ws = wb.active
@@ -1112,7 +1262,7 @@ class OperationsCog(commands.Cog):
         excel_buf.seek(0)
 
         embed = discord.Embed(
-            title=f"📊 รายงานการทำงานประจำวันที่ {date}",
+            title=f"รายงานการทำงานประจำวันที่ {date}",
             color=discord.Color.blue()
         )
         embed.add_field(name="จำนวนกำลังพล", value=f"{total_users} นาย", inline=True)
@@ -1124,7 +1274,7 @@ class OperationsCog(commands.Cog):
     @app_commands.command(name="operation_backup", description="สำรองข้อมูลโฟลเดอร์ data เป็นไฟล์ ZIP")
     async def operation_backup(self, interaction: discord.Interaction):
         if not config.is_owner(interaction.user.id):
-            return await interaction.response.send_message("❌ คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้ (สงวนสิทธิ์เฉพาะเจ้าของบอทเท่านั้น)", ephemeral=True)
+            return await interaction.response.send_message("คุณไม่มีสิทธิ์ใช้งานคำสั่งนี้ (สงวนสิทธิ์เฉพาะเจ้าของบอทเท่านั้น)", ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         try:
@@ -1137,12 +1287,12 @@ class OperationsCog(commands.Cog):
 
             with open(tmp_path, "rb") as f:
                 file = discord.File(f, filename=f"universal_data_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip")
-                await interaction.followup.send("📦 สำรองข้อมูลโฟลเดอร์ data สำเร็จ:", file=file, ephemeral=True)
+                await interaction.followup.send("สำรองข้อมูลโฟลเดอร์ data สำเร็จ:", file=file, ephemeral=True)
 
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
         except Exception as e:
-            await interaction.followup.send(f"❌ สำรองข้อมูลล้มเหลว: {e}", ephemeral=True)
+            await interaction.followup.send(f"สำรองข้อมูลล้มเหลว: {e}", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     cog = OperationsCog(bot)
