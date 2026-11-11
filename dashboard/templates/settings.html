@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+
+{% block title %}ตั้งค่าระบบ — What Universal Dashboard{% endblock %}
+{% block header_title %}ตั้งค่าระบบและการทำงาน (System Settings & Config){% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+
+  <!-- Settings Header Banner -->
+  <div class="glass-panel p-6 sm:p-8 border border-slate-800">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-indigo-400">Settings Center</span>
+        </div>
+        <h2 class="text-2xl font-bold text-white tracking-tight">การตั้งค่าระบบบอทและส่วนกลาง</h2>
+        <p class="text-xs text-slate-400 mt-1">จัดการ Channel ID, โควตาระบบ, ความปลอดภัย, และฟีเจอร์ต่าง ๆ บันทึกแล้วมีผลกับบอททันทีโดยไม่ต้องรีสตาร์ท</p>
+      </div>
+
+      <div class="flex items-center gap-3 shrink-0">
+        <button onclick="downloadBackup()" class="btn-secondary px-4 py-2.5 rounded-xl text-xs flex items-center gap-2">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          <span>สำรองข้อมูล (Backup ZIP)</span>
+        </button>
+        <button onclick="saveAllSettings()" class="btn-primary px-5 py-2.5 rounded-xl text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/30">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+          <span class="font-semibold">บันทึกการตั้งค่าทั้งหมด</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <form id="settings-form" onsubmit="event.preventDefault(); saveAllSettings();" class="space-y-8">
+
+    <!-- 1. Web & Security Settings -->
+    <div class="glass-panel p-6 sm:p-8 border border-slate-800 space-y-6">
+      <div class="flex items-center gap-3 pb-4 border-b border-slate-800/80">
+        <div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">ความปลอดภัยและการเข้าถึง Dashboard</h3>
+          <p class="text-xs text-slate-400">กำหนดพอร์ตเว็บ, รหัสผ่านสำรอง Master Passcode, และ Discord OAuth2</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Web Port (พอร์ตของ Dashboard)</label>
+          <input type="number" id="cfg-WEB_PORT" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white" placeholder="8080">
+          <p class="text-[11px] text-slate-500 mt-1.5">พอร์ตที่ Web Dashboard จะรันบนเครื่อง Host / Pterodactyl Container (ค่าเริ่มต้น: 8080)</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Master Admin Passcode (รหัสผ่านสำรอง)</label>
+          <input type="text" id="cfg-ADMIN_PASSCODE" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="admin1234">
+          <p class="text-[11px] text-slate-500 mt-1.5">รหัสผ่านสำหรับเข้าสู่ระบบ Dashboard กรณีไม่ได้ตั้งค่า Discord OAuth2 หรือฉุกเฉิน</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Discord Client Secret</label>
+          <input type="password" id="cfg-DISCORD_CLIENT_SECRET" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="คัดลอกจาก Discord Developer Portal">
+          <p class="text-[11px] text-slate-500 mt-1.5">จำเป็นสำหรับการล็อกอินด้วยปุ่ม Discord (OAuth2) นำมาจาก Applications &gt; OAuth2 &gt; General</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Dashboard Public URL (Redirect URL)</label>
+          <input type="text" id="cfg-DASHBOARD_URL" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="http://YOUR_SERVER_IP:8080">
+          <p class="text-[11px] text-slate-500 mt-1.5">URL ภายนอกสำหรับ Callback OAuth2 เช่น <code>http://103.x.x.x:8080</code> (ถ้าไม่ใส่จะใช้ Host จาก Browser)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Operations & Time Tracker Settings -->
+    <div class="glass-panel p-6 sm:p-8 border border-slate-800 space-y-6">
+      <div class="flex items-center gap-3 pb-4 border-b border-slate-800/80">
+        <div class="p-2.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">ระบบบันทึกเวลาทำงาน (Operations)</h3>
+          <p class="text-xs text-slate-400">ห้องแชทส่งแผงควบคุม, ห้องแจ้งรหัส OTP, และการตั้งเวลาตัดรอบ</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Operation Log Channel ID (ห้องส่งแผงเริ่มรอบ)</label>
+          <input type="text" id="cfg-OPERATION_LOG_CHANNEL_ID" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้อง Discord สำหรับส่งแผงปุ่มบันทึกเวลาทำงานหลัก</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">OTP Channel ID (ห้องแสดงรหัส OTP ประจำรอบ)</label>
+          <input type="text" id="cfg-OPERATION_OTP_CHANNEL" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้องสำหรับส่งรหัส OTP ให้กำลังพลนำไปกรอกเพื่อเข้าปฏิบัติงาน</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Assistant Log Channel ID (ห้องแจ้งเตือนผู้ช่วย)</label>
+          <input type="text" id="cfg-OPERATION_LOG_ASSISTANT_CHANNEL_ID" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้องแจ้งเตือนเหตุการณ์พิเศษส่งถึงทีมงาน / ผู้ช่วย</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">อายุรหัส OTP (นาที)</label>
+          <input type="number" id="cfg-OTP_EXPIRY_MINUTES" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white" placeholder="60">
+          <p class="text-[11px] text-slate-500 mt-1.5">ระยะเวลาก่อนที่รหัส OTP จะหมดอายุและต้องสร้างใหม่ (ค่าเริ่มต้น: 60 นาที)</p>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-xs font-medium text-slate-300 mb-2">เวลาตัดรอบอัตโนมัติ (Auto Stop Times)</label>
+          <input type="text" id="cfg-AUTO_STOP_TIMES" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="20:00, 00:00, 04:00">
+          <p class="text-[11px] text-slate-500 mt-1.5">ระบุเวลาที่ต้องการให้ตัดรอบอัตโนมัติ คั่นด้วยเครื่องหมายจุลภาค (เช่น <code>20:00, 00:00, 04:00</code>)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Leave & Breaktime Settings -->
+    <div class="glass-panel p-6 sm:p-8 border border-slate-800 space-y-6">
+      <div class="flex items-center gap-3 pb-4 border-b border-slate-800/80">
+        <div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">ระบบลางาน (Leave & Breaktime)</h3>
+          <p class="text-xs text-slate-400">กำหนดโควตาผู้ลาสูงสุดต่อวัน และห้องส่งบอร์ดลางาน</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Leave Board Channel ID (ห้องบอร์ดแสดงสถานะคนลา)</label>
+          <input type="text" id="cfg-LEAVE_BOARD_CHANNEL_ID" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้องสำหรับปักหมุดข้อความบอร์ดแสดงรายชื่อคนลา Realtime</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Leave Panel Channel ID (ห้องแผงกดยื่นลา)</label>
+          <input type="text" id="cfg-LEAVE_PANEL_CHANNEL_ID" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้องสำหรับส่งแผงปุ่มยื่นลา เช็คสิทธิ์ และกลับเข้าเวร</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">โควตาคนลาสูงสุดต่อวัน (Max Quota / Day)</label>
+          <input type="number" id="cfg-MAX_LEAVE_PER_DAY" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white" placeholder="5">
+          <p class="text-[11px] text-slate-500 mt-1.5">จำนวนคนที่อนุญาตให้ลาพร้อมกันได้ใน 1 วัน (ค่าเริ่มต้น: 5 คน)</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">จำนวนวันลาสูงสุดต่อครั้ง (Max Consecutive Days)</label>
+          <input type="number" id="cfg-MAX_LEAVES_SAME_DAY" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white" placeholder="7">
+          <p class="text-[11px] text-slate-500 mt-1.5">จำนวนวันสูงสุดที่สมาชิกสามารถยื่นลาต่อเนื่องได้ใน 1 ครั้ง (ค่าเริ่มต้น: 7 วัน)</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Duty Tracker & Automation Settings -->
+    <div class="glass-panel p-6 sm:p-8 border border-slate-800 space-y-6">
+      <div class="flex items-center gap-3 pb-4 border-b border-slate-800/80">
+        <div class="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        </div>
+        <div>
+          <h3 class="text-base font-bold text-white">ระบบตรวจสอบเวรและการแจ้งเตือน (Duty & Alerts)</h3>
+          <p class="text-xs text-slate-400">ควบคุมการตรวจจับเวลาออกเวรนานเกินกำหนด และสวิตช์เปิด-ปิดระบบอัตโนมัติ</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">Alert Channel ID (ห้องส่งแจ้งเตือน)</label>
+          <input type="text" id="cfg-ALERT_CHANNEL_ID" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white font-mono" placeholder="123456789012345678">
+          <p class="text-[11px] text-slate-500 mt-1.5">ห้องสำหรับส่ง Alert เมื่อเจ้าหน้าที่พักเวรเกินเวลาที่กำหนด</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">ช่องว่างเวลาพักสูงสุด (วินาที)</label>
+          <input type="number" id="cfg-MAX_OFF_DUTY_GAP_SECONDS" class="input-dark w-full px-4 py-2.5 rounded-xl text-xs text-white" placeholder="7200">
+          <p class="text-[11px] text-slate-500 mt-1.5">ระยะเวลาออกเวรสูงสุดก่อนที่ระบบจะส่ง Alert แจ้งเตือน (7200 วินาที = 2 ชั่วโมง)</p>
+        </div>
+
+        <!-- Toggles -->
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold text-white">Duty Tracker System</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">เปิดระบบตรวจจับและแจ้งเตือนเวลาเข้า-ออกเวรอัตโนมัติ</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="cfg-DUTY_TRACKER_ENABLED" class="sr-only peer">
+            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+
+        <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold text-white">Welcome Ticket System</div>
+            <div class="text-[11px] text-slate-400 mt-0.5">เปิดระบบตั๋วต้อนรับสำหรับสมาชิกใหม่ที่เข้าร่วมเซิร์ฟเวอร์</div>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="cfg-WELCOME_TICKET_ENABLED" class="sr-only peer">
+            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Save Button Bottom -->
+    <div class="glass-panel p-4 flex items-center justify-between border border-slate-800 sticky bottom-6 z-10 shadow-2xl backdrop-blur-xl">
+      <div class="text-xs text-slate-400 hidden sm:block">
+        อย่าลืมกดปุ่มบันทึกเมื่อแก้ไขข้อมูลเสร็จสิ้น
+      </div>
+      <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+        <button type="button" onclick="loadConfig()" class="btn-secondary px-4 py-2.5 rounded-xl text-xs">
+          ยกเลิก / คืนค่าเดิม
+        </button>
+        <button type="submit" class="btn-primary px-6 py-2.5 rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/30">
+          บันทึกการตั้งค่าทั้งหมด
+        </button>
+      </div>
+    </div>
+
+  </form>
+
+</div>
+
+<script>
+let currentConfig = {};
+
+async function loadConfig() {
+  const data = await apiCall('/api/config');
+  if (!data || !data.success) {
+    showToast(data?.error || 'ไม่สามารถโหลดการตั้งค่าได้', 'error');
+    return;
+  }
+
+  currentConfig = data.config || {};
+
+  // Fill in form fields
+  const fields = [
+    'WEB_PORT', 'ADMIN_PASSCODE', 'DISCORD_CLIENT_SECRET', 'DASHBOARD_URL',
+    'OPERATION_LOG_CHANNEL_ID', 'OPERATION_OTP_CHANNEL', 'OPERATION_LOG_ASSISTANT_CHANNEL_ID',
+    'OTP_EXPIRY_MINUTES', 'LEAVE_BOARD_CHANNEL_ID', 'LEAVE_PANEL_CHANNEL_ID',
+    'MAX_LEAVE_PER_DAY', 'MAX_LEAVES_SAME_DAY', 'ALERT_CHANNEL_ID', 'MAX_OFF_DUTY_GAP_SECONDS'
+  ];
+
+  fields.forEach(f => {
+    const el = document.getElementById(`cfg-${f}`);
+    if (el && currentConfig[f] !== undefined && currentConfig[f] !== null) {
+      el.value = currentConfig[f];
+    }
+  });
+
+  // Handle AUTO_STOP_TIMES (Array or String)
+  const autoStopEl = document.getElementById('cfg-AUTO_STOP_TIMES');
+  if (autoStopEl && currentConfig.AUTO_STOP_TIMES) {
+    if (Array.isArray(currentConfig.AUTO_STOP_TIMES)) {
+      autoStopEl.value = currentConfig.AUTO_STOP_TIMES.join(', ');
+    } else {
+      autoStopEl.value = currentConfig.AUTO_STOP_TIMES;
+    }
+  }
+
+  // Handle Toggles
+  const dutyToggle = document.getElementById('cfg-DUTY_TRACKER_ENABLED');
+  if (dutyToggle) {
+    dutyToggle.checked = Boolean(currentConfig.DUTY_TRACKER_ENABLED);
+  }
+
+  const welcomeToggle = document.getElementById('cfg-WELCOME_TICKET_ENABLED');
+  if (welcomeToggle) {
+    welcomeToggle.checked = Boolean(currentConfig.WELCOME_TICKET_ENABLED);
+  }
+}
+
+async function saveAllSettings() {
+  const payload = {};
+
+  const intFields = ['WEB_PORT', 'OTP_EXPIRY_MINUTES', 'MAX_LEAVE_PER_DAY', 'MAX_LEAVES_SAME_DAY', 'MAX_OFF_DUTY_GAP_SECONDS'];
+  const strFields = [
+    'ADMIN_PASSCODE', 'DISCORD_CLIENT_SECRET', 'DASHBOARD_URL',
+    'OPERATION_LOG_CHANNEL_ID', 'OPERATION_OTP_CHANNEL', 'OPERATION_LOG_ASSISTANT_CHANNEL_ID',
+    'LEAVE_BOARD_CHANNEL_ID', 'LEAVE_PANEL_CHANNEL_ID', 'ALERT_CHANNEL_ID'
+  ];
+
+  strFields.forEach(f => {
+    const el = document.getElementById(`cfg-${f}`);
+    if (el) {
+      payload[f] = el.value.trim();
+    }
+  });
+
+  intFields.forEach(f => {
+    const el = document.getElementById(`cfg-${f}`);
+    if (el && el.value.trim()) {
+      payload[f] = parseInt(el.value.trim(), 10) || 0;
+    }
+  });
+
+  // AUTO_STOP_TIMES: Split comma-separated string into list of clean times
+  const autoStopEl = document.getElementById('cfg-AUTO_STOP_TIMES');
+  if (autoStopEl) {
+    payload['AUTO_STOP_TIMES'] = autoStopEl.value.split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  // Toggles
+  payload['DUTY_TRACKER_ENABLED'] = document.getElementById('cfg-DUTY_TRACKER_ENABLED').checked;
+  payload['WELCOME_TICKET_ENABLED'] = document.getElementById('cfg-WELCOME_TICKET_ENABLED').checked;
+
+  const res = await apiCall('/api/config', 'POST', payload);
+  if (res && res.success) {
+    showToast(res.message || 'บันทึกการตั้งค่าเรียบร้อยแล้ว', 'success');
+  } else {
+    showToast(res?.error || 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า', 'error');
+  }
+}
+
+function downloadBackup() {
+  showToast('กำลังเตรียมไฟล์สำรองข้อมูล (Backup)...', 'info');
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = '/api/system/backup';
+  document.body.appendChild(form);
+  form.submit();
+  setTimeout(() => form.remove(), 1000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadConfig();
+});
+</script>
+{% endblock %}

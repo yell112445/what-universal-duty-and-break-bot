@@ -91,6 +91,15 @@ class WhatUniversalBot(commands.Bot):
         logger.info(f"🕒 Timezone: {config.timezone}")
         logger.info("=" * 60)
 
+        # เริ่มต้น Web Dashboard Server
+        try:
+            from dashboard.server import start_dashboard
+            web_port = int(config.get("WEB_PORT", 8080))
+            await start_dashboard(self, host="0.0.0.0", port=web_port)
+            logger.info(f"🌐 Web Dashboard เปิดให้บริการแล้วที่ http://0.0.0.0:{web_port}")
+        except Exception as e:
+            logger.error(f"❌ เริ่มต้น Web Dashboard ล้มเหลว: {e}", exc_info=True)
+
         # เริ่มต้นแผง Breaktime Panel & Board
         try:
             breaktime_cog = self.get_cog("BreaktimeCog")
@@ -100,6 +109,15 @@ class WhatUniversalBot(commands.Bot):
                 logger.info("🌴 ซิงค์แผงและบอร์ดลางานเริ่มต้นสำเร็จ")
         except Exception as e:
             logger.warning(f"⚠️ ไม่สามารถซิงค์ Leave Panel เริ่มต้นได้: {e}")
+
+    async def close(self):
+        try:
+            from dashboard.server import stop_dashboard
+            await stop_dashboard()
+            logger.info("🛑 ปิดการทำงาน Web Dashboard Server เรียบร้อยแล้ว")
+        except Exception as e:
+            logger.warning(f"⚠️ เกิดข้อผิดพลาดขณะปิด Web Dashboard: {e}")
+        await super().close()
 
 async def main():
     token = config.token

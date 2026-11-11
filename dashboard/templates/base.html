@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}What Universal Dashboard{% endblock %}</title>
+
+  <!-- Google Fonts: Plus Jakarta Sans & Sarabun for crisp typography -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN for instant zero-build rendering -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              900: '#070a11',
+              800: '#0d131f',
+              700: '#141c2e',
+              600: '#1e293b',
+              500: '#334155',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom Dashboard CSS -->
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-[#070a11] text-slate-100 min-h-screen flex antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container"></div>
+
+  <!-- Sidebar Navigation -->
+  <aside class="w-64 bg-[#0d131f]/90 border-r border-slate-800/80 flex flex-col shrink-0 min-h-screen z-30 backdrop-blur-xl">
+    <!-- Brand Header -->
+    <div class="h-20 flex items-center gap-3 px-6 border-b border-slate-800/80">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-400 flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+        </svg>
+      </div>
+      <div>
+        <h1 class="font-bold text-base tracking-wide text-white font-['Plus_Jakarta_Sans']">WHAT UNIVERSAL</h1>
+        <div class="text-[11px] font-medium text-indigo-400 tracking-wider uppercase">Police & City Command</div>
+      </div>
+    </div>
+
+    <!-- Navigation Menu -->
+    <nav class="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
+      <div class="px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Main Modules</div>
+
+      <!-- Tab 1: Overview -->
+      <a href="/overview" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 {% if active_tab == 'overview' %}bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 font-semibold shadow-sm shadow-indigo-500/10{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}">
+        <svg class="w-5 h-5 {% if active_tab == 'overview' %}text-indigo-400{% else %}text-slate-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path>
+        </svg>
+        <span>ภาพรวมระบบ</span>
+      </a>
+
+      <!-- Tab 2: Operations -->
+      <a href="/operations" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 {% if active_tab == 'operations' %}bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 font-semibold shadow-sm shadow-indigo-500/10{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}">
+        <svg class="w-5 h-5 {% if active_tab == 'operations' %}text-indigo-400{% else %}text-slate-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <span>ระบบบันทึกเวลา</span>
+      </a>
+
+      <!-- Tab 3: Leaves -->
+      <a href="/leaves" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 {% if active_tab == 'leaves' %}bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 font-semibold shadow-sm shadow-indigo-500/10{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}">
+        <svg class="w-5 h-5 {% if active_tab == 'leaves' %}text-indigo-400{% else %}text-slate-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+        </svg>
+        <span>ระบบลางาน</span>
+      </a>
+
+      <!-- Tab 4: Duties -->
+      <a href="/duties" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 {% if active_tab == 'duties' %}bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 font-semibold shadow-sm shadow-indigo-500/10{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}">
+        <svg class="w-5 h-5 {% if active_tab == 'duties' %}text-indigo-400{% else %}text-slate-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+        </svg>
+        <span>ตรวจการเข้า-ออกเวร</span>
+      </a>
+
+      <div class="pt-6 px-3 pb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Administration</div>
+
+      <!-- Tab 5: Settings -->
+      <a href="/settings" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 {% if active_tab == 'settings' %}bg-indigo-600/15 text-indigo-400 border border-indigo-500/30 font-semibold shadow-sm shadow-indigo-500/10{% else %}text-slate-300 hover:text-white hover:bg-slate-800/60{% endif %}">
+        <svg class="w-5 h-5 {% if active_tab == 'settings' %}text-indigo-400{% else %}text-slate-400{% endif %}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+        </svg>
+        <span>ตั้งค่าระบบ & บอท</span>
+      </a>
+    </nav>
+
+    <!-- Sidebar Footer -->
+    <div class="p-4 border-t border-slate-800/80 text-xs text-slate-400 flex items-center justify-between">
+      <div>Version {{ version }}</div>
+      <div class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-emerald"></span>
+        <span class="text-slate-300">Live</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content Wrapper -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Top Navigation Bar -->
+    <header class="h-20 bg-[#0d131f]/70 border-b border-slate-800/80 px-8 flex items-center justify-between shrink-0 backdrop-blur-xl sticky top-0 z-20">
+      <!-- Breadcrumb / Section Title -->
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Control Panel</span>
+        <span class="text-slate-600">/</span>
+        <h2 class="text-base font-semibold text-white tracking-wide">
+          {% block header_title %}Overview{% endblock %}
+        </h2>
+      </div>
+
+      <!-- Right Action & Profile Area -->
+      <div class="flex items-center gap-5">
+        <!-- Live Bot Status Pill -->
+        <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/60 border border-slate-700/60 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-emerald"></span>
+          <span class="text-slate-300 font-medium">Bot Online</span>
+        </div>
+
+        <!-- User Profile Dropdown / Pill -->
+        <div class="flex items-center gap-3 pl-4 border-l border-slate-800/80">
+          <img src="{{ user.avatar }}" alt="Avatar" class="w-9 h-9 rounded-full ring-2 ring-indigo-500/30 object-cover">
+          <div class="hidden md:block text-left">
+            <div class="text-sm font-semibold text-white leading-tight">{{ user.username }}</div>
+            <div class="text-[11px] font-medium text-indigo-400">{{ user.role_title }}</div>
+          </div>
+          <a href="/logout" title="ออกจากระบบ" class="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors ml-1">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Body -->
+    <main class="flex-1 p-8 overflow-y-auto">
+      {% block content %}{% endblock %}
+    </main>
+
+  </div>
+
+  <!-- Global Dashboard Scripts -->
+  <script src="/static/js/dashboard.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

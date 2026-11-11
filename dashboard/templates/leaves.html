@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}ระบบลางาน — What Universal Dashboard{% endblock %}
+{% block header_title %}ระบบลางาน & จัดการโควตา (Leave System & Quota){% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+
+  <!-- Quota Overview & Actions Banner -->
+  <div class="glass-panel p-6 sm:p-8 border border-slate-800">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-800/80">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">Quota Monitor</span>
+        </div>
+        <h2 class="text-2xl font-bold text-white tracking-tight">โควตาและการลางานประจำวัน</h2>
+        <p class="text-xs text-slate-400 mt-1">ตรวจสอบจำนวนผู้ลาประจำวัน สิทธิ์คงเหลือ และยื่นลาพิเศษสำหรับผู้ดูแลระบบ</p>
+      </div>
+
+      <div class="flex items-center gap-3 shrink-0">
+        <button onclick="refreshLeaves()" class="btn-secondary px-4 py-2.5 rounded-xl text-xs flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          <span>รีเฟรช</span>
+        </button>
+        <button onclick="openModal('modal-add-bypass')" class="btn-primary px-4 py-2.5 rounded-xl text-xs flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+          <span>เพิ่มวันลาพิเศษ (Bypass Leave)</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Quota Metrics Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6">
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800">
+        <div class="text-xs text-slate-400">โควตาวันนี้ที่ใช้ไป:</div>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span id="leave-quota-used" class="text-3xl font-extrabold text-white">- / -</span>
+          <span class="text-xs text-slate-400">คน</span>
+        </div>
+        <div class="w-full bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
+          <div id="leave-quota-bar" class="bg-indigo-500 h-1.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+        <div class="text-xs text-slate-400">สิทธิ์ว่างที่สามารถยื่นลาได้:</div>
+        <div class="flex items-baseline gap-2 mt-1">
+          <span id="leave-quota-remaining" class="text-3xl font-extrabold text-emerald-400">-</span>
+          <span class="text-xs text-slate-400">ที่</span>
+        </div>
+        <div class="text-[11px] text-slate-400 mt-2">* ลาประเภท Bypass จะไม่กินโควตานี้</div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col justify-between">
+        <div class="text-xs text-slate-400">สถานะคิวลางาน:</div>
+        <div class="text-sm font-semibold text-slate-200 mt-2 space-y-1">
+          <div class="flex justify-between"><span>กำลังลาอยู่:</span> <span id="leave-count-active" class="text-white font-bold">0 คน</span></div>
+          <div class="flex justify-between"><span>คิวลาล่วงหน้า:</span> <span id="leave-count-upcoming" class="text-indigo-400 font-bold">0 คน</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leave Records Navigation Tabs -->
+  <div class="glass-panel p-6 border border-slate-800 space-y-6">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-4">
+      <div class="flex items-center gap-2">
+        <button onclick="switchTab('active')" id="tab-btn-active" class="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 transition-all">
+          กำลังลาอยู่ (Active)
+        </button>
+        <button onclick="switchTab('upcoming')" id="tab-btn-upcoming" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-all">
+          คิวลาล่วงหน้า (Upcoming)
+        </button>
+        <button onclick="switchTab('history')" id="tab-btn-history" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-all">
+          ประวัติการลาทั้งหมด (History)
+        </button>
+      </div>
+      <input type="text" id="search-leaves" oninput="renderCurrentTable()" placeholder="ค้นหารายชื่อหรือ ID..." class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700/80 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-52">
+    </div>
+
+    <!-- Table Container -->
+    <div class="overflow-x-auto rounded-xl border border-slate-800">
+      <table class="w-full text-left text-xs text-slate-300">
+        <thead class="bg-slate-900 text-[11px] font-semibold uppercase text-slate-400 border-b border-slate-800">
+          <tr>
+            <th class="py-3 px-4">รหัส / ผู้ใช้งาน</th>
+            <th class="py-3 px-4">ประเภทการลา</th>
+            <th class="py-3 px-4">ช่วงเวลาที่ลา</th>
+            <th class="py-3 px-4">ระยะเวลา</th>
+            <th class="py-3 px-4">เหตุผล</th>
+            <th class="py-3 px-4">สถานะ</th>
+            <th class="py-3 px-4 text-right">การจัดการ</th>
+          </tr>
+        </thead>
+        <tbody id="leaves-tbody" class="divide-y divide-slate-800/60 bg-slate-900/40">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal: Add Bypass Leave -->
+<div id="modal-add-bypass" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-overlay">
+  <div class="glass-panel p-6 max-w-lg w-full border border-slate-700 space-y-4">
+    <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+      <h3 class="text-base font-bold text-white">ยื่นวันลาพิเศษ (Bypass Leave)</h3>
+      <button onclick="closeModal('modal-add-bypass')" class="text-slate-400 hover:text-white">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      </button>
+    </div>
+
+    <div class="space-y-4">
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Discord User ID ของเจ้าหน้าที่</label>
+        <input type="text" id="bypass-uid" placeholder="เช่น 1344451915693428909" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+      </div>
+
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">วันที่เริ่มลา</label>
+          <input type="date" id="bypass-start" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">วันที่สิ้นสุดการลา</label>
+          <input type="date" id="bypass-end" class="w-full px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        </div>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">เหตุผลการลา</label>
+        <textarea id="bypass-reason" rows="2" placeholder="ระบุเหตุผล เช่น ติดภารกิจพิเศษ / อนุมัติโดยแอดมิน" class="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"></textarea>
+      </div>
+
+      <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
+        * การลาประเภท Bypass จะไม่ถูกนับรวมในโควตาประจำวันของบุคคลทั่วไป
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+      <button onclick="closeModal('modal-add-bypass')" class="btn-secondary px-4 py-2 rounded-xl text-xs">ยกเลิก</button>
+      <button onclick="submitBypassLeave()" class="btn-primary px-4 py-2 rounded-xl text-xs">บันทึกวันลา</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let leavesData = { active: [], upcoming: [], history: [] };
+let currentTab = 'active';
+
+// Set Default Dates to Today
+const todayStr = new Date().toISOString().split('T')[0];
+document.getElementById('bypass-start').value = todayStr;
+document.getElementById('bypass-end').value = todayStr;
+
+async function refreshLeaves() {
+  const data = await apiCall('/api/leaves');
+  if (!data || !data.success) return;
+
+  leavesData = data;
+  document.getElementById('leave-quota-used').innerText = `${data.today_count} / ${data.max_quota}`;
+  document.getElementById('leave-quota-remaining').innerText = data.remaining_quota;
+  document.getElementById('leave-count-active').innerText = `${data.active.length} คน`;
+  document.getElementById('leave-count-upcoming').innerText = `${data.upcoming.length} คน`;
+
+  const pct = Math.min(100, Math.round((data.today_count / (data.max_quota || 1)) * 100));
+  document.getElementById('leave-quota-bar').style.width = `${pct}%`;
+
+  renderCurrentTable();
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  ['active', 'upcoming', 'history'].forEach(t => {
+    const btn = document.getElementById(`tab-btn-${t}`);
+    if (t === tab) {
+      btn.className = 'px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 transition-all';
+    } else {
+      btn.className = 'px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-all';
+    }
+  });
+  renderCurrentTable();
+}
+
+function renderCurrentTable() {
+  const searchQ = document.getElementById('search-leaves').value.toLowerCase().trim();
+  const list = leavesData[currentTab] || [];
+  const tbody = document.getElementById('leaves-tbody');
+
+  const filtered = list.filter(r => {
+    if (!searchQ) return true;
+    return r.user_name.toLowerCase().includes(searchQ) ||
+           r.user_id.includes(searchQ) ||
+           r.record_id.toLowerCase().includes(searchQ);
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-400">— ไม่มีข้อมูลในหมวดหมู่นี้ —</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = filtered.map(r => {
+    const isBypass = r.leave_type === 'BYPASS';
+    const typeBadge = isBypass
+      ? `<span class="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/30">Bypass</span>`
+      : `<span class="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">${r.leave_type}</span>`;
+
+    const statusBadge = (r.status === 'ON_LEAVE')
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">กำลังลา</span>`
+      : (r.status === 'EXPIRED_PENDING_RETURN')
+      ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">รอกลับเข้าเวร</span>`
+      : `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">${r.status}</span>`;
+
+    const canCancel = (r.status === 'ON_LEAVE' || r.status === 'EXPIRED_PENDING_RETURN');
+
+    return `
+      <tr class="hover:bg-slate-800/40 transition-colors">
+        <td class="py-3 px-4">
+          <div class="font-semibold text-white">${r.user_name}</div>
+          <div class="text-[10px] text-slate-400 font-mono">${r.record_id} • ${r.user_id}</div>
+        </td>
+        <td class="py-3 px-4">${typeBadge}</td>
+        <td class="py-3 px-4 font-mono text-slate-300">${r.start_date} ถึง ${r.end_date}</td>
+        <td class="py-3 px-4">${r.duration_days} วัน <span class="text-slate-400">(เหลือ ${r.remaining_days} วัน)</span></td>
+        <td class="py-3 px-4 text-slate-300 truncate max-w-xs">${r.reason}</td>
+        <td class="py-3 px-4">${statusBadge}</td>
+        <td class="py-3 px-4 text-right">
+          ${canCancel ? `
+            <button onclick="cancelLeave('${r.user_id}', '${r.user_name}')" class="px-2.5 py-1 rounded-lg text-[11px] font-medium text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-colors">
+              ยกเลิกลา
+            </button>
+          ` : `<span class="text-slate-400 text-[11px]">-</span>`}
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function cancelLeave(userId, userName) {
+  if (!confirm(`คุณต้องการยกเลิกคำขอลางานของ ${userName} (${userId}) และคืนโควตาใช่หรือไม่?`)) return;
+  const res = await apiCall('/api/leaves/cancel', 'POST', { user_id: userId });
+  if (res && res.success) {
+    showToast(res.message, 'success');
+    refreshLeaves();
+  } else {
+    showToast(res?.error || 'ยกเลิกลาล้มเหลว', 'error');
+  }
+}
+
+async function submitBypassLeave() {
+  const uid = document.getElementById('bypass-uid').value.trim();
+  const st = document.getElementById('bypass-start').value;
+  const en = document.getElementById('bypass-end').value;
+  const reason = document.getElementById('bypass-reason').value.trim();
+
+  if (!uid || !st || !en) {
+    showToast('กรุณากรอกข้อมูลให้ครบทุกช่อง', 'error');
+    return;
+  }
+
+  const res = await apiCall('/api/leaves/add_bypass', 'POST', {
+    user_id: uid,
+    start_date: st,
+    end_date: en,
+    reason: reason
+  });
+
+  if (res && res.success) {
+    showToast(res.message, 'success');
+    closeModal('modal-add-bypass');
+    document.getElementById('bypass-uid').value = '';
+    document.getElementById('bypass-reason').value = '';
+    refreshLeaves();
+  } else {
+    showToast(res?.error || 'บันทึกวันลาไม่สำเร็จ', 'error');
+  }
+}
+
+// Initial Load
+refreshLeaves();
+</script>
+{% endblock %}

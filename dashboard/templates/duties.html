@@ -1,0 +1,323 @@
+{% extends "base.html" %}
+
+{% block title %}ตรวจสอบสถานะการเข้าเวร — What Universal Dashboard{% endblock %}
+{% block header_title %}ตรวจสอบสถานะการเข้าเวร (Duty & Patrol Monitor){% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8">
+
+  <!-- Overview Stats Banner -->
+  <div class="glass-panel p-6 sm:p-8 border border-slate-800">
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-slate-800/80">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+          <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400">Duty Tracker</span>
+        </div>
+        <h2 class="text-2xl font-bold text-white tracking-tight">สถานะกำลังพลและการลาดตระเวน</h2>
+        <p class="text-xs text-slate-400 mt-1">มอนิเตอร์เจ้าหน้าที่ที่กำลังเข้าเวร (On Duty) และออกเวร (Off Duty) ตรวจสอบเวลาพักและการแจ้งเตือนช่องว่างเวลา</p>
+      </div>
+
+      <div class="flex items-center gap-3 shrink-0">
+        <button onclick="refreshDuties()" class="btn-secondary px-4 py-2.5 rounded-xl text-xs flex items-center gap-2">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+          <span>รีเฟรช</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Metrics Cards Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6">
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400">กำลังเข้าเวร (On Duty)</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        </div>
+        <div id="stat-on-duty" class="text-3xl font-bold text-emerald-400 mt-2">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">เจ้าหน้าที่ที่กำลังปฏิบัติหน้าที่</div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400">ออกเวรแล้ว (Off Duty)</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span>
+        </div>
+        <div id="stat-off-duty" class="text-3xl font-bold text-slate-300 mt-2">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">เจ้าหน้าที่ที่หยุดปฏิบัติงานล่าสุด</div>
+      </div>
+
+      <div class="p-4 rounded-xl bg-slate-900/60 border border-slate-800/80">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium text-slate-400">แจ้งเตือนพักเกินเวลา (Alerts)</span>
+          <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+        </div>
+        <div id="stat-alerts" class="text-3xl font-bold text-amber-400 mt-2">0</div>
+        <div class="text-[11px] text-slate-500 mt-1">รายการแจ้งเตือนค้างในระบบ</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs Navigation & Search -->
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div class="flex items-center gap-2 border-b sm:border-b-0 border-slate-800 pb-2 sm:pb-0">
+      <button onclick="switchTab('tab-on-duty')" id="tab-btn-on-duty" class="px-4 py-2 rounded-xl text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 transition-all">
+        กำลังเข้าเวร (<span id="tab-count-on">0</span>)
+      </button>
+      <button onclick="switchTab('tab-off-duty')" id="tab-btn-off-duty" class="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all">
+        ออกเวรแล้ว (<span id="tab-count-off">0</span>)
+      </button>
+      <button onclick="switchTab('tab-alerts')" id="tab-btn-alerts" class="px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all">
+        รายการแจ้งเตือน (<span id="tab-count-alerts">0</span>)
+      </button>
+    </div>
+
+    <!-- Search Input -->
+    <div class="relative w-full sm:w-72">
+      <input type="text" id="duty-search" oninput="filterDutyList()" placeholder="ค้นหาชื่อ หรือ User ID..." class="input-dark w-full pl-9 pr-4 py-2 rounded-xl text-xs text-slate-200 placeholder-slate-500">
+      <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+    </div>
+  </div>
+
+  <!-- Tab 1: On Duty -->
+  <div id="tab-on-duty" class="duty-tab-content space-y-4">
+    <div class="glass-panel overflow-hidden border border-slate-800">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-slate-900/80 text-[11px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="px-6 py-4">เจ้าหน้าที่</th>
+              <th class="px-6 py-4">Discord ID</th>
+              <th class="px-6 py-4">สถานะ</th>
+              <th class="px-6 py-4">เวลาที่เข้าเวร</th>
+              <th class="px-6 py-4 text-right">ลิงก์ข้อความ</th>
+            </tr>
+          </thead>
+          <tbody id="on-duty-table-body" class="divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="5" class="px-6 py-8 text-center text-slate-500 font-sans">กำลังโหลดข้อมูล...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 2: Off Duty -->
+  <div id="tab-off-duty" class="duty-tab-content hidden space-y-4">
+    <div class="glass-panel overflow-hidden border border-slate-800">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-slate-900/80 text-[11px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="px-6 py-4">เจ้าหน้าที่</th>
+              <th class="px-6 py-4">Discord ID</th>
+              <th class="px-6 py-4">สถานะ</th>
+              <th class="px-6 py-4">เวลาที่ออกเวร</th>
+              <th class="px-6 py-4 text-right">ลิงก์ข้อความ</th>
+            </tr>
+          </thead>
+          <tbody id="off-duty-table-body" class="divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="5" class="px-6 py-8 text-center text-slate-500 font-sans">กำลังโหลดข้อมูล...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: Pending Alerts -->
+  <div id="tab-alerts" class="duty-tab-content hidden space-y-4">
+    <div class="glass-panel overflow-hidden border border-slate-800">
+      <div class="p-6 border-b border-slate-800/80">
+        <h3 class="text-base font-bold text-white">รายการแจ้งเตือนพักเกินเวลาที่กำหนด</h3>
+        <p class="text-xs text-slate-400 mt-1">ระบบจะแจ้งเตือนเมื่อเจ้าหน้าที่ออกเวรนานเกินกว่าค่า MAX_OFF_DUTY_GAP_SECONDS ที่กำหนดไว้ในระบบ</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs text-slate-300">
+          <thead class="bg-slate-900/80 text-[11px] font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="px-6 py-4">Discord ID</th>
+              <th class="px-6 py-4">เวลาที่ออกเวร</th>
+              <th class="px-6 py-4">เวลาที่กำหนดแจ้งเตือน</th>
+              <th class="px-6 py-4">สถานะการเตือน</th>
+            </tr>
+          </thead>
+          <tbody id="alerts-table-body" class="divide-y divide-slate-800/60 font-mono">
+            <tr>
+              <td colspan="4" class="px-6 py-8 text-center text-slate-500 font-sans">ไม่มีรายการแจ้งเตือนค้างในระบบ</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+let dutiesDataCache = { on_duty: [], off_duty: [], pending_alerts: {} };
+
+async function refreshDuties() {
+  const data = await apiCall('/api/duties');
+  if (!data || !data.success) {
+    showToast(data?.error || 'ไม่สามารถโหลดข้อมูลเวรได้', 'error');
+    return;
+  }
+
+  dutiesDataCache = data;
+  renderDuties();
+}
+
+function renderDuties() {
+  const onDuty = dutiesDataCache.on_duty || [];
+  const offDuty = dutiesDataCache.off_duty || [];
+  const alerts = dutiesDataCache.pending_alerts || {};
+  const alertKeys = Object.keys(alerts);
+
+  document.getElementById('stat-on-duty').innerText = onDuty.length;
+  document.getElementById('stat-off-duty').innerText = offDuty.length;
+  document.getElementById('stat-alerts').innerText = alertKeys.length;
+
+  document.getElementById('tab-count-on').innerText = onDuty.length;
+  document.getElementById('tab-count-off').innerText = offDuty.length;
+  document.getElementById('tab-count-alerts').innerText = alertKeys.length;
+
+  filterDutyList();
+}
+
+function filterDutyList() {
+  const q = (document.getElementById('duty-search').value || '').toLowerCase().trim();
+
+  // 1. On Duty List
+  const onDuty = (dutiesDataCache.on_duty || []).filter(item => {
+    return !q || item.player_name.toLowerCase().includes(q) || item.user_id.includes(q);
+  });
+
+  const onBody = document.getElementById('on-duty-table-body');
+  if (onDuty.length === 0) {
+    onBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500 font-sans">ไม่มีเจ้าหน้าที่กำลังเข้าเวร</td></tr>`;
+  } else {
+    onBody.innerHTML = onDuty.map(item => `
+      <tr class="hover:bg-slate-800/30 transition-colors">
+        <td class="px-6 py-4 font-sans flex items-center gap-3">
+          <img src="${item.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}" class="w-8 h-8 rounded-full border border-slate-700 bg-slate-800" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+          <div>
+            <div class="font-semibold text-white">${escapeHtml(item.player_name)}</div>
+          </div>
+        </td>
+        <td class="px-6 py-4 text-slate-400 font-mono">${item.user_id}</td>
+        <td class="px-6 py-4">
+          <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+            ON DUTY
+          </span>
+        </td>
+        <td class="px-6 py-4 text-slate-300 font-mono">${item.last_status_time || '-'}</td>
+        <td class="px-6 py-4 text-right">
+          ${item.message_link ? `
+            <a href="${item.message_link}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors">
+              <span>ดูข้อความ</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+          ` : '<span class="text-slate-500">-</span>'}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // 2. Off Duty List
+  const offDuty = (dutiesDataCache.off_duty || []).filter(item => {
+    return !q || item.player_name.toLowerCase().includes(q) || item.user_id.includes(q);
+  });
+
+  const offBody = document.getElementById('off-duty-table-body');
+  if (offDuty.length === 0) {
+    offBody.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-slate-500 font-sans">ไม่มีข้อมูลเจ้าหน้าที่ที่ออกเวร</td></tr>`;
+  } else {
+    offBody.innerHTML = offDuty.map(item => `
+      <tr class="hover:bg-slate-800/30 transition-colors">
+        <td class="px-6 py-4 font-sans flex items-center gap-3">
+          <img src="${item.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}" class="w-8 h-8 rounded-full border border-slate-700 bg-slate-800" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+          <div>
+            <div class="font-semibold text-slate-300">${escapeHtml(item.player_name)}</div>
+          </div>
+        </td>
+        <td class="px-6 py-4 text-slate-400 font-mono">${item.user_id}</td>
+        <td class="px-6 py-4">
+          <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+            OFF DUTY
+          </span>
+        </td>
+        <td class="px-6 py-4 text-slate-400 font-mono">${item.last_status_time || '-'}</td>
+        <td class="px-6 py-4 text-right">
+          ${item.message_link ? `
+            <a href="${item.message_link}" target="_blank" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors">
+              <span>ดูข้อความ</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+            </a>
+          ` : '<span class="text-slate-500">-</span>'}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  // 3. Pending Alerts List
+  const alertsObj = dutiesDataCache.pending_alerts || {};
+  const alertEntries = Object.entries(alertsObj);
+  const alertsBody = document.getElementById('alerts-table-body');
+  if (alertEntries.length === 0) {
+    alertsBody.innerHTML = `<tr><td colspan="4" class="px-6 py-8 text-center text-slate-500 font-sans">ไม่มีรายการแจ้งเตือนค้างในระบบ</td></tr>`;
+  } else {
+    alertsBody.innerHTML = alertEntries.map(([uid, val]) => `
+      <tr class="hover:bg-slate-800/30 transition-colors">
+        <td class="px-6 py-4 font-mono font-semibold text-white">${uid}</td>
+        <td class="px-6 py-4 text-slate-300 font-mono">${val.off_duty_time || '-'}</td>
+        <td class="px-6 py-4 text-amber-400 font-mono font-semibold">${val.alert_time || '-'}</td>
+        <td class="px-6 py-4">
+          <span class="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            PENDING ALERT
+          </span>
+        </td>
+      </tr>
+    `).join('');
+  }
+}
+
+function switchTab(targetId) {
+  document.querySelectorAll('.duty-tab-content').forEach(el => el.classList.add('hidden'));
+  document.getElementById(targetId).classList.remove('hidden');
+
+  const tabs = [
+    { id: 'tab-on-duty', btn: 'tab-btn-on-duty', activeClass: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+    { id: 'tab-off-duty', btn: 'tab-btn-off-duty', activeClass: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40' },
+    { id: 'tab-alerts', btn: 'tab-btn-alerts', activeClass: 'bg-amber-500/20 text-amber-300 border-amber-500/40' }
+  ];
+
+  tabs.forEach(t => {
+    const btn = document.getElementById(t.btn);
+    if (t.id === targetId) {
+      btn.className = `px-4 py-2 rounded-xl text-xs font-medium border transition-all ${t.activeClass}`;
+    } else {
+      btn.className = 'px-4 py-2 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-all border border-transparent';
+    }
+  });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>'"]/g, tag => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    "'": '&#39;',
+    '"': '&quot;'
+  }[tag] || tag));
+}
+
+// Initial fetch
+document.addEventListener('DOMContentLoaded', () => {
+  refreshDuties();
+  setInterval(refreshDuties, 20000); // Polling every 20s
+});
+</script>
+{% endblock %}

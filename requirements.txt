@@ -5,3 +5,4 @@ openpyxl>=3.1.2
 python-dateutil>=2.9.0
 tzdata>=2024.1
 aiohttp>=3.9.5
+itsdangerous>=2.1.2
